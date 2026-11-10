@@ -262,7 +262,11 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     // The car: eases up to speed while notes are held, and down to a stop.
     const i32 target = held ? cruise : 0;
     if (input.reduced_motion) state.speed = target;
-    else state.speed += ((target - state.speed) * smallest(1024u, static_cast<u32>(dt) * 6u)) >> 10;
+    else {
+        // signed throughout: a slowing car's negative step must stay negative
+        const i32 ease = dt * 6 < 1024 ? dt * 6 : 1024;
+        state.speed += ((target - state.speed) >> 4) * ease >> 6;
+    }
     if (!held && state.speed < unit) state.speed = 0;
     const bool flying = state.speed > 0;
     if (flying) state.clock = (state.clock + dt) & 0xfffffff;
