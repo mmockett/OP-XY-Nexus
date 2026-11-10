@@ -8,8 +8,7 @@
 //
 // Each voice plays two layers, as the CS-80 plays its channels I and II. Each
 // layer is a band-limited oscillator that morphs sine, saw, square and narrow
-// pulse, a little softly saturated, into its own 12 dB resonant
-// state-variable low-pass. The layers play the same wave a few cents apart, so
+// pulse, into its own 12 dB resonant state-variable low-pass. The layers play the same wave a few cents apart, so
 // they phase slowly against each other; layer I breathes a little noise, and
 // layer II can be ring-modulated by a sine at a ratio that rises with ring.
 //
@@ -177,7 +176,7 @@ static inline i32 saw(u32 phase, u32 step, u32 reciprocal) {
     return s;
 }
 
-struct Filter { i32 a1, a2, a3; };
+struct Filter { i32 a1, g; };   // 1 / (1 + g (g + k)), and g / 4, Q31
 struct Layer {
     u32 phase, step, reciprocal;
     u32 ring_phase, ring_step;
@@ -186,13 +185,13 @@ struct Layer {
     i32 ic1, ic2;
 };
 
-// A layer over a block: oscillator, breath or ring, soft saturation, low-pass, into out (Q26).
+// A layer over a block: oscillator, breath or ring, low-pass, into out (Q26).
 template <Mode M, bool Noise, bool Ring>
 __attribute__((noinline)) static void layer(Layer& l, const Wave& w, const Filter& f, i32* __restrict out) {
     u32 phase = l.phase, noise = l.noise, ring_phase = l.ring_phase;
     const u32 step = l.step, reciprocal = l.reciprocal, ring_step = l.ring_step, width = w.width;
     const i32 ws = w.saw, wp = w.pulse, wn = w.sine, dry = l.ring_dry, wet = l.ring_wet;
-    const i32 a1 = f.a1, a2 = f.a2, a3 = f.a3;
+    const i32 a1 = f.a1, g = f.g;
     i32 ic1 = l.ic1, ic2 = l.ic2;
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
         phase += step;
@@ -202,21 +201,20 @@ __attribute__((noinline)) static void layer(Layer& l, const Wave& w, const Filte
         else if (M == saw_only) o = saw(phase, step, reciprocal);
         else o = (product(saw(phase, step, reciprocal), ws) - product(saw(phase + width, step, reciprocal), wp)) >> 15;
         if (Noise) {
-            noise ^= noise << 13; noise ^= noise >> 17; noise ^= noise << 5;
+            noise = noise * 1664525u + 1013904223u;
             o += product(static_cast<i32>(noise) >> 16, noise_level) >> 15;
         }
         if (Ring) {
             ring_phase += ring_step;
             o = (o * (dry + (product(sine(ring_phase), wet) >> 15))) >> 14;
         }
-        // into the filter at half level, softly saturated: v - 0.08 v^3
-        const i32 v = clamp(o >> 1, -32767, 32767);
-        const i32 cube = product(product(v, v) >> 15, v) >> 15;
-        const i32 x = (v - (product(cube, 2621) >> 15)) * 2048;        // Q26
-        // 12 dB state-variable low-pass (trapezoidal)
+        // into the filter at half level, Q26
+        const i32 x = (Ring ? clamp(o, -65534, 65534) : o) * 1024;
+        // 12 dB state-variable low-pass (trapezoidal), in three multiplies:
+        // v1 = a1 (ic1 + g v3), v2 = ic2 + g v1
         const i32 v3 = x - ic2;
-        const i32 v1 = multiply(a1, ic1) + multiply(a2, v3);
-        const i32 v2 = ic2 + multiply(a2, ic1) + multiply(a3, v3);
+        const i32 v1 = multiply(a1, ic1 + multiply(g, v3) * 4);
+        const i32 v2 = ic2 + multiply(g, v1) * 4;
         ic1 = 2 * v1 - ic1;
         ic2 = 2 * v2 - ic2;
         out[i] = v2;
@@ -246,8 +244,7 @@ static inline Filter filter_of(i32 octaves, i32 k) {
     if (n > 65535u) n = 65535u;
     Filter f;
     f.a1 = static_cast<i32>(n << 15);                                  // Q31
-    f.a2 = multiply(g, f.a1) * 8;                                      // g a1, Q31
-    f.a3 = multiply(g, f.a2) * 8;                                      // g a2, Q31
+    f.g = g * 2;                                                       // g / 4, Q31
     return f;
 }
 
@@ -263,26 +260,23 @@ __attribute__((noinline)) static void mono(const i32* __restrict a, const i32* _
     }
 }
 
-// Spread and the CS-80's chorus: L = mono + side, R = mono - side, then on
-// each side two first-order allpasses, mixed with the dry side and swayed.
-__attribute__((noinline)) static void chorus(const i32* __restrict a, const i32* __restrict b, opxy::Output out,
-                                             const Stereo& st, i32* pass) {
-    i32 lx = pass[0], la = pass[1], lb = pass[2], rx = pass[3], ra = pass[4], rb = pass[5];
-    const i32 h = st.half_spread, cl = st.coefficient[0], cr = st.coefficient[1];
-    const i32 dl = st.dry[0], wl = st.wet[0], dr = st.dry[1], wr = st.wet[1];
+// Spread and the CS-80's chorus on one side: L = mono + side, R = mono - side
+// (Sign 1 and -1), then two first-order allpasses, mixed with the dry side and
+// swayed. A side at a time, so its state stays in registers.
+template <int Sign>
+__attribute__((noinline)) static void chorus_side(const i32* __restrict a, const i32* __restrict b, i32* __restrict out,
+                                                  i32 half_spread, i32 coefficient, i32 dry, i32 wet, i32* pass) {
+    i32 x0 = pass[0], y1 = pass[1], y2 = pass[2];
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
-        const i32 m = a[i] + b[i], side = multiply(a[i] - b[i], h);
-        const i32 left = m + side, right = m - side;
-        const i32 l1 = multiply(cl, left - la) + lx;
-        const i32 l2 = multiply(cl, l1 - lb) + la;
-        lx = left; la = l1; lb = l2;
-        const i32 r1 = multiply(cr, right - ra) + rx;
-        const i32 r2 = multiply(cr, r1 - rb) + ra;
-        rx = right; ra = r1; rb = r2;
-        out[2 * i] = clamp(multiply(left, dl) + multiply(l2, wl), -ceiling, ceiling) * 8;
-        out[2 * i + 1] = clamp(multiply(right, dr) + multiply(r2, wr), -ceiling, ceiling) * 8;
+        const i32 ai = a[i], bi = b[i];
+        const i32 side = multiply(ai - bi, half_spread);
+        const i32 x = Sign > 0 ? ai + bi + side : ai + bi - side;
+        const i32 s1 = multiply(coefficient, x - y1) + x0;
+        const i32 s2 = multiply(coefficient, s1 - y2) + y1;
+        x0 = x; y1 = s1; y2 = s2;
+        out[2 * i] = clamp(multiply(x, dry) + multiply(s2, wet), -ceiling, ceiling) * 8;
     }
-    pass[0] = lx; pass[1] = la; pass[2] = lb; pass[3] = rx; pass[4] = ra; pass[5] = rb;
+    pass[0] = x0; pass[1] = y1; pass[2] = y2;
 }
 
 // The chorus's settings this block, for depth d (Q15) and the shared clock's sine.
@@ -431,7 +425,11 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output,
     voice.low[2] = two.ic1; voice.low[3] = two.ic2;
 
     // ---- the stereo stage: mono at chorus 0
-    if (depth) chorus(a, b, output, stereo_of(depth, shared.sway), voice.pass);
+    if (depth) {
+        const Stereo st = stereo_of(depth, shared.sway);
+        chorus_side<1>(a, b, output, st.half_spread, st.coefficient[0], st.dry[0], st.wet[0], voice.pass);
+        chorus_side<-1>(a, b, output + 1, st.half_spread, st.coefficient[1], st.dry[1], st.wet[1], voice.pass + 3);
+    }
     else {
         mono(a, b, output);
         for (unsigned k2 = 0; k2 < 6; ++k2) voice.pass[k2] = 0;
