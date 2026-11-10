@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  # Nexus needs SDK 1.12 (stereo synth voices); pin a compatible SDK commit for a release.
+  # Nexus needs SDK 1.13 (stereo synth voices and a synth's Shift row); pin a compatible SDK commit for a release.
   OPEN_XY_REF: staging
 jobs:
   # The machine's records, browser preview, drawing checks and its own host

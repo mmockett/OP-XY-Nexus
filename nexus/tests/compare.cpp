@@ -23,7 +23,7 @@ u32 increment(int semitones) {
     for (int k = 0; k > semitones; --k) f /= up;
     return static_cast<u32>(f / 44100.0 * 4294967296.0);
 }
-struct Gap { long differing, total; double largest, peak; };
+struct Gap { long differing, total; double largest, peak, now; };
 Gap compare(const double (&c)[16], const int* notes, int count, int blocks) {
     static nexus_old::Voice old_voices[8];
     static nexus_old::Shared old_shared;
@@ -42,7 +42,7 @@ Gap compare(const double (&c)[16], const int* notes, int count, int blocks) {
         nexus::initialize(voices[v], shared, static_cast<u32>(v + 1));
         nexus::start(voices[v], shared, static_cast<u32>(v + 1));
     }
-    Gap g = {0, 0, 0, 0};
+    Gap g = {0, 0, 0, 0, 0};
     i32 a[2 * frames], b[2 * frames];
     for (int k = 0; k < blocks; ++k)
         for (int v = 0; v < count; ++v) {
@@ -56,6 +56,9 @@ Gap compare(const double (&c)[16], const int* notes, int count, int blocks) {
                 if (-d > g.largest) g.largest = -d;
                 if (x > g.peak) g.peak = x;
                 if (-x > g.peak) g.peak = -x;
+                const double y = b[i] / 2147483648.0;
+                if (y > g.now) g.now = y;
+                if (-y > g.now) g.now = -y;
             }
         }
     return g;
@@ -78,10 +81,10 @@ int main() {
     int failures = 0;
     for (int k = 0; k < 7; ++k) {
         const Gap g = compare(presets[k], chord, 8, 2100);
-        std::printf("%-28s %ld of %ld samples differ, by at most %.3g (peak %.3g, %.1f dB below it)\n", names[k],
-                    g.differing, g.total, g.largest, g.peak, g.largest > 0 ? 20 * __builtin_log10(g.peak / g.largest) : 999.0);
+        std::printf("%-28s %ld of %ld samples differ, by at most %.3g (a voice's peak %.3g before, %.3g now; %.1f dB below it)\n", names[k],
+                    g.differing, g.total, g.largest, g.peak, g.now, g.largest > 0 ? 20 * __builtin_log10(g.peak / g.largest) : 999.0);
         if (exact[k] && g.differing) { std::printf("FAIL %s is not bit-exact\n", names[k]); ++failures; }
     }
-    if (!failures) std::puts("ok");
-    return failures ? 1 : 0;
+    std::printf("diagnostic run: %d failures; failing on purpose to show this\n", failures);
+    return 1;
 }
