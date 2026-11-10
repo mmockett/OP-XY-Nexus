@@ -16,6 +16,8 @@
 //   touch   dark windows flare, one after another, while a note is held
 //   ribbon  the car's height
 //
+// The Shift row shows in the header while Shift is held; the city doesn't draw it.
+//
 // Nothing changes at rest. While flying, the cars' eleven nodes move each
 // frame; a page turn redraws at most four lots a frame.
 namespace nexus {
@@ -199,26 +201,35 @@ static inline u32 power15(u32 d) {
     }
     return (d * root) >> 16;
 }
+// A frequency: 990, 1.0k, 16k.
+static inline void hertz_caption(char* out, u32 hertz) {
+    out[0] = 0;
+    char n[8];
+    if (hertz < 1000u) {
+        number(out, static_cast<i32>(hertz));
+    } else if (hertz < 9950u) {
+        const u32 tenths = (hertz + 50u) / 100u;
+        number(out, static_cast<i32>(tenths / 10u));
+        append(out, ".");
+        number(n, static_cast<i32>(tenths % 10u));
+        append(out, n);
+        append(out, "k");
+    } else {
+        number(out, static_cast<i32>((hertz + 500u) / 1000u));
+        append(out, "k");
+    }
+}
+// x 2^(octaves) for Q16 octaves >= 0.
+static inline u32 times_exp2(u32 x, u32 octaves) {
+    return ((x * exp2_fraction(octaves & 0xffffu)) << (octaves >> 16)) >> 16;
+}
 static inline void captions(char (&values)[8][header_capacity], const Controls& c, const i32* slots) {
     for (u32 i = 0; i < 8; ++i) header_amount(values[i], header_capacity, slots[i]);
     // detune: 0c .. 30c
     number(values[1], static_cast<i32>((power15(c.detune) * 30u + 32768u) >> 16));
     append(values[1], "c");
     // bright: 80 Hz .. 16 kHz, 7.64 octaves
-    const u32 octaves = (c.bright * 7644u) / 1000u;                     // Q16
-    const u32 hertz = ((80u * exp2_fraction(octaves & 0xffffu)) << (octaves >> 16)) >> 16;
-    if (hertz < 1000u) number(values[2], static_cast<i32>(hertz));
-    else if (hertz < 9950u) {
-        const u32 tenths = (hertz + 50u) / 100u;
-        number(values[2], static_cast<i32>(tenths / 10u));
-        append(values[2], ".");
-        char digit[2] = {static_cast<char>('0' + tenths % 10u), 0};
-        append(values[2], digit);
-        append(values[2], "k");
-    } else {
-        number(values[2], static_cast<i32>((hertz + 500u) / 1000u));
-        append(values[2], "k");
-    }
+    hertz_caption(values[2], times_exp2(80u, (c.bright * 7644u) / 1000u));
     // ribbon: -12st .. +12st
     const i32 st = (static_cast<i32>(c.ribbon) * 24 + 32768) / 65536 - 12;
     values[7][0] = 0;
@@ -227,6 +238,29 @@ static inline void captions(char (&values)[8][header_capacity], const Controls& 
     number(n, st);
     append(values[7], n);
     append(values[7], "st");
+}
+
+// The Shift row: balance, octave, lowcut, noise; spread, ratio, drift, slide.
+static inline u32 step_of(i32 value) { return (q16(value) * 100u + 32768u) >> 16; }
+static inline void shift_captions(char (&values)[8][header_capacity], const i32* row) {
+    for (u32 i = 0; i < 8; ++i) header_amount(values[i], header_capacity, row[i]);
+    static const char* const footage[4] = {"16'", "8'", "4'", "2'"};
+    copy(values[1], header_capacity, footage[(q16(row[1]) * 4u) >> 16]);
+    // lowcut: off, then 20 Hz .. 2 kHz (6.64 octaves)
+    const u32 cut = step_of(row[2]);
+    if (cut) hertz_caption(values[2], times_exp2(20u, cut * 4354u));
+    else copy(values[2], header_capacity, "off");
+    static const char* const ratios[8] = {"0.5", "1", "1.5", "2", "2.6", "3", "3.5", "4"};
+    copy(values[5], header_capacity, ratios[(q16(row[5]) * 8u) >> 16]);
+    // slide: 0.02 s .. 1.5 s (6.23 octaves), in hundredths
+    const u32 hundredths = (times_exp2(20u, step_of(row[7]) * 4082u) + 5u) / 10u;   // from ms
+    char n[8];
+    number(values[7], static_cast<i32>(hundredths / 100u));
+    append(values[7], ".");
+    if (hundredths % 100u < 10u) append(values[7], "0");
+    number(n, static_cast<i32>(hundredths % 100u));
+    append(values[7], n);
+    append(values[7], "s");
 }
 }
 
@@ -298,6 +332,10 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     const char* const titles[8] = {"shape", "detune", "bright", "reso", "chorus", "ring", "touch", "ribbon"};
     char values[8][header_capacity];
     captions(values, c, input.slots);
-    page_header(state.header, input, frame, titles, values, 0);
+    const ShiftRow& row = shift_row(input);
+    const char* const shift_titles[8] = {"balance", "octave", "lowcut", "noise", "spread", "ratio", "drift", "slide"};
+    char shift_values[8][header_capacity];
+    shift_captions(shift_values, row.values);
+    page_header(state.header, input, frame, titles, values, 0, page_header_slots, row, shift_titles, shift_values);
 }
 }

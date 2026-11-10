@@ -1,5 +1,6 @@
 #pragma once
 #include <opxy/page_header.hpp>
+#include <opxy/synth_shift.hpp>
 #include "city.h"
 
 namespace nexus {

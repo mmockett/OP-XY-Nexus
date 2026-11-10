@@ -96,6 +96,108 @@
       "display": "semitones"
     }
   ],
+  "shift": [
+    {
+      "id": "balance",
+      "label": "Balance",
+      "default": 0.5,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "octave",
+      "label": "Octave",
+      "default": 0.375,
+      "mapping": {
+        "kind": "enum",
+        "labels": [
+          "16ft",
+          "8ft",
+          "4ft",
+          "2ft"
+        ]
+      },
+      "display": "enum"
+    },
+    {
+      "id": "lowcut",
+      "label": "Lowcut",
+      "default": 0,
+      "mapping": {
+        "kind": "exponential",
+        "minimum": 20,
+        "maximum": 2000
+      },
+      "display": "percent"
+    },
+    {
+      "id": "noise",
+      "label": "Noise",
+      "default": 0.06,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "spread",
+      "label": "Spread",
+      "default": 0.4,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "ratio",
+      "label": "Ratio",
+      "default": 0.3125,
+      "mapping": {
+        "kind": "enum",
+        "labels": [
+          "0.5",
+          "1",
+          "1.5",
+          "2",
+          "2.6",
+          "3",
+          "3.5",
+          "4"
+        ]
+      },
+      "display": "enum"
+    },
+    {
+      "id": "drift",
+      "label": "Drift",
+      "default": 0.25,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "slide",
+      "label": "Slide",
+      "default": 0.3,
+      "mapping": {
+        "kind": "exponential",
+        "minimum": 0.02,
+        "maximum": 1.5
+      },
+      "display": "percent"
+    }
+  ],
   "presets": {
     "Tyrell": {
       "shape": 0.33,
@@ -105,7 +207,15 @@
       "chorus": 0.45,
       "ring": 0,
       "touch": 0.8,
-      "ribbon": 0.5
+      "ribbon": 0.5,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0.4,
+      "ratio": 0.3125,
+      "drift": 0.25,
+      "slide": 0.3
     },
     "Long Strings": {
       "shape": 0.34,
@@ -115,7 +225,15 @@
       "chorus": 0.4,
       "ring": 0,
       "touch": 0.35,
-      "ribbon": 0.5
+      "ribbon": 0.5,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0.36,
+      "ratio": 0.3125,
+      "drift": 0.25,
+      "slide": 0.3
     },
     "Glass Choir": {
       "shape": 0.1,
@@ -125,7 +243,15 @@
       "chorus": 0.3,
       "ring": 0.25,
       "touch": 0.2,
-      "ribbon": 0.5
+      "ribbon": 0.5,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0.27,
+      "ratio": 0.3125,
+      "drift": 0.25,
+      "slide": 0.3
     },
     "Toy Bells": {
       "shape": 0,
@@ -135,7 +261,15 @@
       "chorus": 0,
       "ring": 0.7,
       "touch": 0,
-      "ribbon": 0.5
+      "ribbon": 0.5,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0,
+      "ratio": 0.8125,
+      "drift": 0.25,
+      "slide": 0.3
     },
     "Sixteen Feet": {
       "shape": 0.66,
@@ -145,7 +279,15 @@
       "chorus": 0,
       "ring": 0,
       "touch": 0.4,
-      "ribbon": 0.5
+      "ribbon": 0.5,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0,
+      "ratio": 0.3125,
+      "drift": 0.25,
+      "slide": 0.3
     },
     "Rise Lead": {
       "shape": 0.34,
@@ -155,11 +297,19 @@
       "chorus": 0.2,
       "ring": 0,
       "touch": 0.5,
-      "ribbon": 0.79
+      "ribbon": 0.79,
+      "balance": 0.5,
+      "octave": 0.375,
+      "lowcut": 0,
+      "noise": 0.06,
+      "spread": 0.18,
+      "ratio": 0.3125,
+      "drift": 0.25,
+      "slide": 0.3
     }
   },
   "resources": {
-    "voiceBytes": 108,
+    "voiceBytes": 116,
     "voiceAlignment": 4,
     "voiceCapacity": 8,
     "sharedBytes": 12,

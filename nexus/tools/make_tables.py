@@ -19,14 +19,29 @@ def row(name, kind, values, per=8):
     return "\n".join(lines)
 
 
-def ratio(ring):
-    """The ring modulator's frequency ratio, which rises with ring: a fifth (1.5) up to
-    ring 25, 3.5 at ring 70 (bells), 4 at full."""
-    if ring <= 0.25:
-        return 1.5
-    if ring <= 0.70:
-        return 1.5 + (ring - 0.25) / 0.45 * 2.0
-    return 3.5 + (ring - 0.70) / 0.30 * 0.5
+BLOCK = 64 / SR
+# The ribbon's slide-in: its time constant at slide 30 is the one the engine always had
+# (a decay of 30870 a block, about 0.073 s to settle), and it spans 75 times over the travel.
+SLIDE_30 = -BLOCK / math.log(30870 / 32768)
+
+
+def slide(step):
+    """The slide still to go, kept a block, Q15, for slide 0..100: 0.02 s to 1.5 s to settle."""
+    return round(32768 * math.exp(-BLOCK / (SLIDE_30 * 75 ** ((step - 30) / 100))))
+
+
+def lowcut(step):
+    """A one-pole high-pass's coefficient 1 - e^(-2 pi f / fs), Q31, f = 20 Hz x 100^(step/100); 0 is off."""
+    return 0 if step == 0 else round((1 - math.exp(-2 * math.pi * 20 * 100 ** (step / 100) / SR)) * 2 ** 31)
+
+
+def balance(step):
+    """Layer I's level at balance 0..100, equal power, 1024 at 50 (where both layers sit at cos 45 degrees)."""
+    return round(1024 * math.cos(step / 100 * math.pi / 2) / math.cos(math.pi / 4))
+
+
+# The ring modulator's ratios, as the ratio control lists them.
+RATIOS = [0.5, 1, 1.5, 2, 2.6, 3, 3.5, 4]
 
 
 tables = [
@@ -43,8 +58,14 @@ tables = [
     row("allpass", "opxy::i32", [round((lambda t: (t - 1) / (t + 1))(math.tan(math.pi * 20 * 2 ** (k / 4) / SR)) * 2 ** 31) for k in range(40)]),
     "// Half the detune, Q16 octaves: 30 cents x d^1.5 between the layers, d = k/16",
     row("detune", "opxy::i32", [round(30 * (k / 16) ** 1.5 / 2400 * 65536) for k in range(17)]),
-    "// log2 of the ring modulator's ratio, Q16 octaves, ring = k/16",
-    row("ratio", "opxy::i32", [round(math.log2(ratio(k / 16)) * 65536) for k in range(17)]),
+    "// log2 of the ring modulator's ratio, Q16 octaves: " + ", ".join(str(r) for r in RATIOS),
+    row("ratio", "opxy::i32", [round(math.log2(r) * 65536) for r in RATIOS]),
+    "// Layer I's level into its filter at balance 0..100, equal power, 1024 at 50; layer II reads it from 100 down",
+    row("balance", "opxy::i16", [balance(k) for k in range(101)], 16),
+    "// The ribbon's slide kept a block at slide 0..100, Q15: 0.02 s to 1.5 s, 0.073 s at 30",
+    row("slide", "opxy::i16", [slide(k) for k in range(101)], 16),
+    "// The low cut's one-pole coefficient at lowcut 0..100, Q31: off, then 20 Hz to 2 kHz",
+    row("lowcut", "opxy::i32", [lowcut(k) for k in range(101)]),
     "}}",
 ]
 (HERE / "tables.h").write_text("\n".join(tables) + "\n")

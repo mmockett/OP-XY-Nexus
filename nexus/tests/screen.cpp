@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <cstring>
 
+// The Shift row the display reads (the OP-XY fills it for the selected track's synth).
+opxy::draw::ShiftRow row;
+extern "C" const opxy::draw::ShiftRow* opxy_synth_shift(opxy::u32) { return &row; }
+
 namespace {
 using opxy::i32;
 using opxy::u32;
@@ -50,6 +54,10 @@ int main() {
     i32 slots[8];
     const double tyrell[8] = {.33, .22, .46, .28, .45, 0, .80, .5};
     for (int k = 0; k < 8; ++k) slots[k] = static_cast<i32>(tyrell[k] * 2147483647.0);
+    // The row at its defaults: balance 50, octave 8', lowcut off, noise 6; spread 40, ratio 1.5, drift 25, slide 30.
+    const i32 defaults[8] = {0x40000000, 0x2ffffffe, 0, 0x07ae147b, 0x33333333, 0x27fffffd, 0x20000000, 0x26666666};
+    std::memset(&row, 0, sizeof row);
+    for (int k = 0; k < 8; ++k) row.values[k] = defaults[k];
     nexus::display_reset(state);
     std::memset(&frame, 0, sizeof frame);
     step(slots, 0, 0);
@@ -65,6 +73,33 @@ int main() {
             expect(opxy::draw::valid(frame), "a frame is invalid");
         }
     }
+
+    // The Shift row: held on either page, every entry through every value, with valid captions.
+    for (int line = 0; line < 2; ++line) {
+        row.held = 1;
+        row.line = static_cast<u32>(line);
+        for (int k = 0; k < 8; ++k) {
+            for (int v = 0; v < 128; ++v) {
+                row.values[k] = v == 127 ? 0x7fffffff : v << 24;
+                i32 s[8];
+                for (int j = 0; j < 8; ++j) s[j] = slots[j];
+                opxy::draw::Input in = input_of(s, v & 1, 1 + v / 16);
+                if (line) for (int c = 0; c < 4; ++c) in.shown[c] = static_cast<opxy::u8>(4 + c);
+                std::memcpy(&before, &frame, sizeof frame);
+                nexus::display(state, in, frame);
+                expect(opxy::draw::valid(frame), "a frame with Shift held is invalid");
+                for (int c = 0; c < 4; ++c) expect(frame.header[c][0] != 0, "a Shift caption is empty");
+            }
+            row.values[k] = defaults[k];
+        }
+    }
+    // Holding Shift at rest: the header changes rows, then nothing changes.
+    for (int f = 0; f < 30; ++f) step(slots, 0, 8);
+    u32 held_still = 0;
+    for (int f = 0; f < 60; ++f) held_still += step(slots, 0, 8);
+    expect(held_still == 0, "the screen changes at rest with Shift held");
+    row.held = 0;
+    row.line = 0;
 
     // At rest nothing changes.
     for (int f = 0; f < 120; ++f) step(slots, 0, 9);

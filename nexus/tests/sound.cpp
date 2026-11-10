@@ -9,6 +9,16 @@ const unsigned frames = opxy::block_frames;
 const i32 peak = 0x30000000;   // definition.json's outputPeakQ31
 
 i32 word(double v) { return v <= 0 ? 0 : v >= 1 ? 0x7fffffff : static_cast<i32>(v * 2147483647.0); }
+// A Shift row amount's word, as the OP-XY plays it: whole steps 0..100, step / 100 of full scale.
+i32 amount(double v) {
+    const int step = v <= 0 ? 0 : v >= 1 ? 100 : static_cast<int>(v * 100 + 0.5);
+    return step == 100 ? 0x7fffffff : step * 21474836 + (step * 47 + 50) / 100;
+}
+// The sixteen words render receives: the eight controls, then the Shift row (octave
+// and ratio are enums, read by choice; the rest are amounts).
+void words(const double (&c)[16], i32 (&p)[16]) {
+    for (int k = 0; k < 16; ++k) p[k] = k < 8 || k == 9 || k == 13 ? word(c[k]) : amount(c[k]);
+}
 // 440 Hz x 2^(semitones / 12) as a phase increment, by repeated factors (no libm).
 u32 increment(int semitones) {
     double f = 440.0;
@@ -23,11 +33,11 @@ double trace[2][64 * 700];   // the left side of the last two single notes, for 
 struct Result { double peak_left, peak_right, energy, difference, crossings; bool bounded, mono; };
 
 // One note (or a chord) of `blocks` blocks at the given controls (0..1).
-Result play(const double (&c)[8], const int* notes, int count, int blocks, int slot = -1) {
+Result play(const double (&c)[16], const int* notes, int count, int blocks, int slot = -1) {
     static nexus::Voice voices[8];
     static nexus::Shared shared;
-    i32 p[8];
-    for (int k = 0; k < 8; ++k) p[k] = word(c[k]);
+    i32 p[16];
+    words(c, p);
     u32 pitch[8][frames];
     for (int v = 0; v < count; ++v) {
         for (unsigned i = 0; i < frames; ++i) pitch[v][i] = increment(notes[v]);
@@ -69,16 +79,19 @@ void expect(bool ok, const char* what) {
 }
 }
 
+// The Shift row at its defaults: balance 50, octave 8', lowcut off, noise 6; spread 40, ratio 1.5, drift 25, slide 30.
+#define ROW .5, .375, 0, .06, .40, .3125, .25, .30
+
 int main() {
-    //                    shape detune bright reso chorus ring touch ribbon
-    const double tyrell[8] = {.33, .22, .46, .28, .45, 0, .80, .5};
-    const double presets[6][8] = {
-        {.33, .22, .46, .28, .45, 0, .80, .5},       // Tyrell
-        {.34, .60, .42, .10, .40, 0, .35, .5},       // Long Strings
-        {.10, .30, .62, .30, .30, .25, .20, .5},     // Glass Choir
-        {0, .20, .70, .20, 0, .70, 0, .5},           // Toy Bells
-        {.66, .20, .30, .30, 0, 0, .40, .5},         // Sixteen Feet
-        {.34, .15, .58, .30, .20, 0, .50, .79},      // Rise Lead
+    //                         shape detune bright reso chorus ring touch ribbon | balance octave lowcut noise spread ratio drift slide
+    const double tyrell[16] = {.33, .22, .46, .28, .45, 0, .80, .5, ROW};
+    const double presets[6][16] = {
+        {.33, .22, .46, .28, .45, 0, .80, .5, ROW},                                 // Tyrell
+        {.34, .60, .42, .10, .40, 0, .35, .5, .5, .375, 0, .06, .36, .3125, .25, .30},     // Long Strings
+        {.10, .30, .62, .30, .30, .25, .20, .5, .5, .375, 0, .06, .27, .3125, .25, .30},   // Glass Choir
+        {0, .20, .70, .20, 0, .70, 0, .5, .5, .375, 0, .06, 0, .8125, .25, .30},           // Toy Bells
+        {.66, .20, .30, .30, 0, 0, .40, .5, .5, .375, 0, .06, 0, .3125, .25, .30},         // Sixteen Feet
+        {.34, .15, .58, .30, .20, 0, .50, .79, .5, .375, 0, .06, .18, .3125, .25, .30},    // Rise Lead
     };
     const int chord[8] = {-21, -17, -14, -10, -9, -5, -2, 2};
     const int one[1] = {-9};
@@ -92,45 +105,56 @@ int main() {
         expect(r.peak_left < 1.0 && r.peak_right < 1.0, "a chord clips");
         expect(r.peak_left > 0.2, "a chord is far quieter than the suite");
     }
-    // The extremes stay bounded.
-    for (int corner = 0; corner < 256; corner += 17) {
-        double c[8];
-        for (int k = 0; k < 8; ++k) c[k] = (corner >> k) & 1 ? 1.0 : 0.0;
+    // The extremes stay bounded, the Shift row's with them.
+    for (int corner = 0; corner < 65536; corner += 4369) {
+        double c[16];
+        for (int k = 0; k < 16; ++k) c[k] = (corner >> k) & 1 ? 1.0 : 0.0;
         expect(play(c, chord, 8, 300).bounded, "a corner of the controls above the declared peak");
     }
-    // Mono at chorus 0: both sides are the same voice.
-    double dry[8] = {.33, .22, .46, .28, 0, 0, .80, .5};
-    expect(play(dry, one, 1, 400).mono, "chorus 0 is not mono");
-    expect(play(dry, chord, 8, 200).mono, "chorus 0 is not mono in a chord");
+    for (int k = 0; k < 16; ++k) {
+        double c[16];
+        for (int j = 0; j < 16; ++j) c[j] = 1.0;
+        c[k] = 0;
+        expect(play(c, chord, 8, 200).bounded, "every control up but one, above the declared peak");
+    }
+    // Mono at chorus 0 and spread 0: both sides are the same voice.
+    double dry[16] = {.33, .22, .46, .28, 0, 0, .80, .5, ROW};
+    dry[12] = 0;
+    expect(play(dry, one, 1, 400).mono, "chorus 0, spread 0 is not mono");
+    expect(play(dry, chord, 8, 200).mono, "chorus 0, spread 0 is not mono in a chord");
     const Result wide = play(tyrell, one, 1, 700);
     expect(!wide.mono && wide.difference > wide.energy * 0.002, "chorus makes no stereo");
+    double spread[16] = {.33, .22, .46, .28, 0, 0, .80, .5, ROW};
+    const Result apart = play(spread, one, 1, 700);
+    expect(!apart.mono && apart.difference > apart.energy * 0.002, "spread alone makes no stereo");
 
     // In tune: a sine at 440 Hz crosses zero 880 times a second.
-    const double sine[8] = {0, 0, 1, 0, 0, 0, 0, .5};
+    const double sine[16] = {0, 0, 1, 0, 0, 0, 0, .5, ROW};
     const int a4[1] = {0};
     const Result tune = play(sine, a4, 1, 689);
     std::printf("sine at A4: %.0f zero crossings in a second\n", tune.crossings);
     expect(tune.crossings > 860 && tune.crossings < 900, "a sine at A4 is out of tune");
 
-    // Every control changes the sound between 0 and 100.
-    const Result base = play(dry, one, 1, 500);
-    for (int k = 0; k < 8; ++k) {
-        double lo[8], hi[8];
-        for (int j = 0; j < 8; ++j) lo[j] = hi[j] = dry[j];
+    // Every control changes the sound between its ends, the Shift row's too; ring's
+    // ratio with ring up, and the slide with the ribbon off centre.
+    for (int k = 0; k < 16; ++k) {
+        double lo[16], hi[16];
+        for (int j = 0; j < 16; ++j) lo[j] = hi[j] = dry[j];
+        if (k == 13) lo[5] = hi[5] = .5;
+        if (k == 15) lo[7] = hi[7] = .9;
         lo[k] = 0;
         hi[k] = 1;
         const Result a = play(lo, one, 1, 500, 0), b = play(hi, one, 1, 500, 1);
-        double apart = 0, size = 0;
+        double gap = 0, size = 0;
         for (unsigned i = 0; i < 500 * frames; ++i) {
-            apart += (trace[0][i] - trace[1][i]) * (trace[0][i] - trace[1][i]);
+            gap += (trace[0][i] - trace[1][i]) * (trace[0][i] - trace[1][i]);
             size += trace[0][i] * trace[0][i] + trace[1][i] * trace[1][i];
         }
-        const bool moved = apart > 0.01 * size || a.difference != b.difference;
+        const bool moved = gap > 0.01 * size || a.difference != b.difference;
         std::printf("control %d: energy %.3g -> %.3g, crossings %.0f -> %.0f, change %.3f\n", k, a.energy, b.energy,
-                    a.crossings, b.crossings, apart / (size + 1e-12));
+                    a.crossings, b.crossings, gap / (size + 1e-12));
         expect(moved, "a control changes nothing");
     }
-    (void)base;
     if (!failures) std::puts("ok");
     return failures ? 1 : 0;
 }

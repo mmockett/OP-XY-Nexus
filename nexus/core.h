@@ -15,6 +15,7 @@ struct Voice {
     u32 phase[3];       // layer I, layer II, the ring modulator's sine
     i32 low[4];         // the two low-passes' states: I's ic1, ic2, then II's
     i32 pass[6];        // the chorus's allpasses, left then right: last input, stage 1's and stage 2's last outputs
+    i32 cut[2];         // the low cuts' one-pole states, layer I and II
     i32 slide;          // the ribbon's slide still to go, Q15 (1 at the note's start)
     u32 vibrato;        // the vibrato's phase
     u32 vibrato_rate;   // its increment a block: about 5.6 to 6.2 Hz, per note
