@@ -17,7 +17,7 @@
 //   ribbon  the car's height
 //
 // Nothing changes at rest. While flying, the cars' eleven nodes move each
-// frame; a page turn redraws at most eight lots a frame.
+// frame; a page turn redraws at most four lots a frame.
 namespace nexus {
 namespace screen {
 using namespace opxy::draw;
@@ -27,7 +27,7 @@ using opxy::u32;
 const i32 c30 = 887;                    // cos 30 degrees, Q10
 const i32 cruise = 120 * unit;          // the car's speed while held, world px a second
 const i32 page_length = 256 * unit;     // a page: four lots along x
-const u32 most_lots = 8;                // lots redrawn in one frame, besides the first
+const u32 most_lots = 4;                // lots redrawn in one frame, besides the first
 const u32 wipe_frames = 8;
 
 static inline u32 hash(i32 i, i32 j, u32 k) {
