@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "id": "nexus",
+  "name": "NEXUS",
+  "parameters": [
+    {
+      "id": "shape",
+      "label": "Shape",
+      "default": 0.33,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "detune",
+      "label": "Detune",
+      "default": 0.22,
+      "mapping": {
+        "kind": "power",
+        "maximum": 30,
+        "exponent": 1.5
+      },
+      "display": "percent"
+    },
+    {
+      "id": "bright",
+      "label": "Bright",
+      "default": 0.46,
+      "mapping": {
+        "kind": "exponential",
+        "minimum": 80,
+        "maximum": 16000
+      },
+      "display": "percent"
+    },
+    {
+      "id": "reso",
+      "label": "Reso",
+      "default": 0.28,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "chorus",
+      "label": "Chorus",
+      "control": 0,
+      "default": 0.45,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "ring",
+      "label": "Ring",
+      "control": 1,
+      "default": 0,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "touch",
+      "label": "Touch",
+      "control": 2,
+      "default": 0.8,
+      "mapping": {
+        "kind": "linear",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "display": "percent"
+    },
+    {
+      "id": "ribbon",
+      "label": "Ribbon",
+      "control": 3,
+      "default": 0.5,
+      "mapping": {
+        "kind": "linear",
+        "minimum": -12,
+        "maximum": 12
+      },
+      "display": "semitones"
+    }
+  ],
+  "presets": {
+    "Tyrell": {
+      "shape": 0.33,
+      "detune": 0.22,
+      "bright": 0.46,
+      "reso": 0.28,
+      "chorus": 0.45,
+      "ring": 0,
+      "touch": 0.8,
+      "ribbon": 0.5
+    },
+    "Long Strings": {
+      "shape": 0.34,
+      "detune": 0.6,
+      "bright": 0.42,
+      "reso": 0.1,
+      "chorus": 0.4,
+      "ring": 0,
+      "touch": 0.35,
+      "ribbon": 0.5
+    },
+    "Glass Choir": {
+      "shape": 0.1,
+      "detune": 0.3,
+      "bright": 0.62,
+      "reso": 0.3,
+      "chorus": 0.3,
+      "ring": 0.25,
+      "touch": 0.2,
+      "ribbon": 0.5
+    },
+    "Toy Bells": {
+      "shape": 0,
+      "detune": 0.2,
+      "bright": 0.7,
+      "reso": 0.2,
+      "chorus": 0,
+      "ring": 0.7,
+      "touch": 0,
+      "ribbon": 0.5
+    },
+    "Sixteen Feet": {
+      "shape": 0.66,
+      "detune": 0.2,
+      "bright": 0.3,
+      "reso": 0.3,
+      "chorus": 0,
+      "ring": 0,
+      "touch": 0.4,
+      "ribbon": 0.5
+    },
+    "Rise Lead": {
+      "shape": 0.34,
+      "detune": 0.15,
+      "bright": 0.58,
+      "reso": 0.3,
+      "chorus": 0.2,
+      "ring": 0,
+      "touch": 0.5,
+      "ribbon": 0.79
+    }
+  },
+  "resources": {
+    "voiceBytes": 108,
+    "voiceAlignment": 4,
+    "voiceCapacity": 8,
+    "sharedBytes": 12,
+    "outputPeakQ31": 805306368,
+    "stereoOutput": 1,
+    "display": {
+      "stateBytes": 220,
+      "stateAlignment": 4,
+      "paths": 0,
+      "points": 0,
+      "nodes": 417,
+      "texts": 16,
+      "palette": 12
+    }
+  },
+  "press": "page"
+}

@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "sdk": "1.12",
+  "kind": "synth",
+  "description": "A two-layer polysynth after the CS-80: brass that blooms under a held note, a ribbon slide, ring modulation and the CS-80's own stereo chorus.",
+  "presetDefaults": {
+    "amp": {
+      "attack": 9000,
+      "decay": 26000,
+      "sustain": 29500,
+      "release": 9000
+    }
+  }
+}
