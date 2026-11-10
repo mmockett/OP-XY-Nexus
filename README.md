@@ -72,11 +72,11 @@ one saved with ring above 25 now rings at a fifth until ratio is set.
 | Preset | Role | The idea |
 | --- | --- | --- |
 | Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second, the chorus and spread wide. The default |
-| Long Strings | pad | Slow saws further apart, a softer swell, chorus and spread |
-| Glass Choir | pad | Near-sine layers with ring at a fifth, bright and still |
+| Long Strings | pad | Slow saws further apart, a softer swell, more drift, chorus and spread |
+| Glass Choir | pad | Near-sine layers, the second an octave up, with ring at a fifth, bright and still |
 | Toy Bells | percussion | Sine, ring at a ratio of 3.5, no swell: play it with a short envelope |
-| Sixteen Feet | bass | A square, dark and resonant, mono |
-| Rise Lead | lead | A saw that slides up seven semitones into each note |
+| Sixteen Feet | bass | A square with its second layer an octave down, dark and resonant, mono |
+| Rise Lead | lead | A saw that slides up seven semitones into each note, over about 0.4 s |
 
 Tyrell sounds as intended with a slow amp envelope (attack about 0.35 s,
 release about 2 s), the OP-XY's filter (M3) and LFO (M4) off, and a long, dark
