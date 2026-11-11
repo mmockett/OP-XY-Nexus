@@ -276,8 +276,10 @@ int main() {
         expect(settled(s), "the city hasn't settled after turning controls in flight");
     }
 
-    // A long flight, notes held throughout: the cars cross many times, wrapping cleanly.
+    // A long flight, notes held throughout: the cars cross many times, wrapping cleanly. (Detune
+    // comes back from 0 on its first frame, and the wingman with it, wherever it is.)
     {
+        step(slots, 1, 990);
         u32 appeared = 0, vanished = 0;
         for (int f = 0; f < 3000; ++f) {
             const bool was = !hidden(frame.nodes[nexus::city::car_first + nexus::city::lead_nodes]);
