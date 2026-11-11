@@ -79,7 +79,7 @@ The OP-XY's filter (M3) and LFO (M4) are off in every preset.
 <!-- presets: written by nexus/tools/make_presets.py -->
 | Preset | Role | The idea | Amp: attack / decay / sustain / release | Sends: reverb, delay | CPU a voice, est. |
 | --- | --- | --- | --- | --- | --- |
-| Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second, the chorus and spread wide. The default | 0.12 s / 0.13 s / 90% / 7 s | 60, 0 | 4.0% |
+| Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second, the chorus and spread wide. The default | 0.36 s / 0.68 s / 90% / 1.9 s | 60, 0 | 4.0% |
 | Long Strings | pad | Slow saws further apart, a softer swell, more drift, chorus and spread | 0.94 s / 0.51 s / 90% / 3.8 s | 60, 0 | 4.7% |
 | Glass Choir | pad | Near-sine layers, the second an octave up, with ring at a fifth, bright and still | 0.51 s / 0.51 s / 80% / 3.3 s | 70, 0 | 5.6% |
 | Toy Bells | percussion | Sine, ring at a ratio of 3.5, no swell | 0 s / 1.4 s / 0% / 1.8 s | 50, 20 | 4.2% |

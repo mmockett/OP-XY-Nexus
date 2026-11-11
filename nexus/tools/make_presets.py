@@ -44,7 +44,7 @@ TABLE = [
               "spread wide. The default",
          controls=dict(shape=33, detune=22, bright=46, reso=28, chorus=45, ring=0, touch=80, ribbon=50,
                        balance=50, octave="8ft", lowcut=0, noise=6, spread=40, ratio="1.5", drift=25, slide=30),
-         amp="words", sends=(60, 0)),
+         amp=(0.35, 1.6, 0.9, 1.9), sends=(60, 0)),
     dict(name="Long Strings", role="pad",
          idea="Slow saws further apart, a softer swell, more drift, chorus and spread",
          controls=dict(shape=34, detune=60, bright=42, reso=10, chorus=40, ring=0, touch=35, ribbon=50,
