@@ -1,5 +1,6 @@
 // Nexus's sound checks, compiled for the host and run by python sdk.py test --machine <folder>.
 #include "../engine.cpp"
+#include "presets.h"
 #include <cstdio>
 
 namespace {
@@ -85,21 +86,13 @@ void expect(bool ok, const char* what) {
 int main() {
     //                         shape detune bright reso chorus ring touch ribbon | balance octave lowcut noise spread ratio drift slide
     const double tyrell[16] = {.33, .22, .46, .28, .45, 0, .80, .5, ROW};
-    const double presets[6][16] = {
-        {.33, .22, .46, .28, .45, 0, .80, .5, ROW},                                 // Tyrell
-        {.34, .60, .42, .10, .40, 0, .35, .5, .5, .375, 0, .06, .36, .3125, .25, .30},     // Long Strings
-        {.10, .30, .62, .30, .30, .25, .20, .5, .5, .375, 0, .06, .27, .3125, .25, .30},   // Glass Choir
-        {0, .20, .70, .20, 0, .70, 0, .5, .5, .375, 0, .06, 0, .8125, .25, .30},           // Toy Bells
-        {.66, .20, .30, .30, 0, 0, .40, .5, .5, .375, 0, .06, 0, .3125, .25, .30},         // Sixteen Feet
-        {.34, .15, .58, .30, .20, 0, .50, .79, .5, .375, 0, .06, .18, .3125, .25, .30},    // Rise Lead
-    };
     const int chord[8] = {-21, -17, -14, -10, -9, -5, -2, 2};
     const int one[1] = {-9};
 
     // Every preset sounds, stays under the declared peak, and an eight-note chord sits near Hexagon's levels.
-    for (int k = 0; k < 6; ++k) {
-        const Result r = play(presets[k], chord, 8, 1400);
-        std::printf("preset %d: chord of 8 peaks at %.2f / %.2f of full scale\n", k, r.peak_left, r.peak_right);
+    for (unsigned k = 0; k < preset_count; ++k) {
+        const Result r = play(presets[k].c, chord, 8, 1400);
+        std::printf("%s: chord of 8 peaks at %.2f / %.2f of full scale\n", presets[k].name, r.peak_left, r.peak_right);
         expect(r.energy > 0, "a preset is silent");
         expect(r.bounded, "a voice above the declared peak");
         expect(r.peak_left < 1.0 && r.peak_right < 1.0, "a chord clips");

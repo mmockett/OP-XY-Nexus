@@ -69,18 +69,39 @@ one saved with ring above 25 now rings at a fifth until ratio is set.
 
 ## Presets
 
-| Preset | Role | The idea |
-| --- | --- | --- |
-| Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second, the chorus and spread wide. The default |
-| Long Strings | pad | Slow saws further apart, a softer swell, more drift, chorus and spread |
-| Glass Choir | pad | Near-sine layers, the second an octave up, with ring at a fifth, bright and still |
-| Toy Bells | percussion | Sine, ring at a ratio of 3.5, no swell: play it with a short envelope |
-| Sixteen Feet | bass | A square with its second layer an octave down, dark and resonant, mono |
-| Rise Lead | lead | A saw that slides up seven semitones into each note, over about 0.4 s |
+Each preset carries its amp envelope and its Shift row; Tyrell is the default,
+in place of an init. Times are the OP-XY's own: attack to full level, decay to
+the sustain level, release to silence. The sends belong to the track, not the
+preset, so set them as the table gives: reverb on one send, delay on the other.
+The OP-XY's filter (M3) and LFO (M4) are off in every preset.
+`nexus/tools/make_presets.py` writes them all, and this table, from one list.
 
-Tyrell sounds as intended with a slow amp envelope (attack about 0.35 s,
-release about 2 s), the OP-XY's filter (M3) and LFO (M4) off, and a long, dark
-reverb send. Falls at the ends of phrases come from the OP-XY's pitch bend.
+<!-- presets: written by nexus/tools/make_presets.py -->
+| Preset | Role | The idea | Amp: attack / decay / sustain / release | Sends: reverb, delay | CPU a voice, est. |
+| --- | --- | --- | --- | --- | --- |
+| Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second, the chorus and spread wide. The default | 0.12 s / 0.13 s / 90% / 7 s | 60, 0 | 4.0% |
+| Long Strings | pad | Slow saws further apart, a softer swell, more drift, chorus and spread | 0.94 s / 0.51 s / 90% / 3.8 s | 60, 0 | 4.7% |
+| Glass Choir | pad | Near-sine layers, the second an octave up, with ring at a fifth, bright and still | 0.51 s / 0.51 s / 80% / 3.3 s | 70, 0 | 5.6% |
+| Toy Bells | percussion | Sine, ring at a ratio of 3.5, no swell | 0 s / 1.4 s / 0% / 1.8 s | 50, 20 | 4.2% |
+| Sixteen Feet | bass | A square with its second layer an octave down, dark and resonant, mono | 0.01 s / 0.06 s / 70% / 0.44 s | 15, 0 | 4.1% |
+| Rise Lead | lead | A saw that slides up seven semitones into each note, over about 0.4 s | 0.05 s / 0.1 s / 90% / 1.2 s | 50, 20 | 4.7% |
+| Neon Rain | pad | Saws 8 cents apart with the second layer an octave down, a slow swell, the chorus and spread wide, a breath of noise and the lowest lows cut | 1.2 s / 0.62 s / 85% / 6 s | 60, 15 | 4.3% |
+| Sodium Haze | pad | Dark saws far apart under a hiss of breath, swelling slowly open, wide and drifting | 1.7 s / 0.59 s / 90% / 7 s | 70, 0 | 4.2% |
+| High Rise | pad | A saw with a second layer an octave up and a little quieter, bright and open, for chords that shimmer over the band | 0.61 s / 0.62 s / 85% / 4.5 s | 65, 25 | 4.3% |
+| Harbor Fog | pad | A dark, low pad: the second layer an octave down and leading, a deep swell, wide and slow | 1.5 s / 0.59 s / 90% / 6.4 s | 55, 0 | 4.3% |
+| Ember | pad | Hollow squares 6 cents apart, the CS-80's chorus deep, a soft swell: an organ-like string pad | 0.79 s / 0.62 s / 85% / 5 s | 55, 10 | 4.9% |
+| Afterglow | swell | Each note slides up a semitone into place over most of a second while the filter blooms its fullest: saws wide apart, far apart in the field, a long attack | 2.7 s / 0.59 s / 90% / 7.9 s | 75, 20 | 4.2% |
+| Vapor Choir | choir | Resonant saws with the second layer an octave up, a vibrato that arrives late, breath and the widest chorus and spread: a choir across the whole field | 0.94 s / 0.62 s / 85% / 5 s | 75, 0 | 4.3% |
+| Ice Tower | glass | Sine layers, the second two octaves up and ringing at 2.6, struck and fading, spread wide: glass bells | 0 s / 2.6 s / 18% / 4.5 s | 65, 30 | 4.5% |
+| Undercity | bass | A saw with an octave under it, mono, a resonant filter that growls open as the note is held | 0.01 s / 0.35 s / 65% / 0.48 s | 10, 0 | 3.4% |
+| Ion Rings | texture | Saws rung at 3.5 against the second layer, swelling and drifting: metallic, unsettled, wide | 0.72 s / 0.62 s / 80% / 5 s | 65, 30 | 4.4% |
+<!-- /presets -->
+
+Falls at the ends of phrases come from the OP-XY's pitch bend. The CPU column
+is estimated, as under CPU below. Pads play many voices, so most stay near
+Tyrell's cost. Four presets cost more than 4.5% a voice: Glass Choir, which
+blends sine and saw and rings, and Ember, Long Strings and Rise Lead, whose
+shape is past the saw, where the square's work starts.
 
 ## The screen
 
