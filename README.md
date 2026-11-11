@@ -84,10 +84,12 @@ reverb send. Falls at the ends of phrases come from the OP-XY's pitch bend.
 
 ## The screen
 
-An isometric night city: dark towers with light edges, lit windows, neon
-strips and masts. While a note is held, a white flying car crosses it with
-its wingman; at the edge of the screen the city turns the page and the car
-flies on over the next stretch, which never repeats.
+An isometric night city, still and the same every time: dark towers drawn in
+fine light edges, with setbacks, lit windows, neon strips, signs and masts.
+While a note is held, a white flying car and its wingman cross it, level, left
+to right, and come round again after a short gap. Small traffic crosses the
+sky on three lanes, a searchlight sweeps from one roof and the mast lights
+blink. When the note ends, everything eases to a stop where it is.
 
 | Control | What it changes |
 | --- | --- |
