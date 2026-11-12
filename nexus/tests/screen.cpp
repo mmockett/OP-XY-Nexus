@@ -19,8 +19,9 @@ using opxy::i32;
 using opxy::u32;
 using opxy::draw::unit;
 
-// The budgets: points of changed outlines a frame (display.cpp's), and the filled area, header
-// included, at most 1.6 times the picture below the header (480 x 182 px).
+// The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
+// bars may change besides), and the filled area, header included, at most 1.6 times the picture
+// below the header (480 x 182 px).
 const u32 most_points = nexus::screen::budget;
 const double most_fill = 1.6 * 480 * 182;
 
@@ -182,6 +183,7 @@ int main() {
                 const Change c = step(s, v & 1, 1 + v / 16);
                 check_outlines();
                 expect(c.points <= most_points, "a control's turn changes more points in a frame than the budget");
+                expect(c.nodes <= nexus::screen::most_nodes + 8, "a control's turn changes more nodes in a frame than the budget");
                 if (c.points > sweep_most) sweep_most = c.points;
             }
             expect(opxy::draw::valid(frame), "a frame is invalid");
@@ -272,6 +274,7 @@ int main() {
                     "(%u nodes); the train came round %u times\n", k, points / double(length), nodes / double(length),
                     static_cast<unsigned>(most), static_cast<unsigned>(most_nodes), static_cast<unsigned>(train_appeared));
         expect(most <= most_points, "a frame in flight changes more points than the budget");
+        expect(most_nodes <= nexus::screen::most_nodes + 8, "a frame in flight changes more nodes than the budget");
         expect(train_appeared >= 1, "the train doesn't come round again");
     }
 

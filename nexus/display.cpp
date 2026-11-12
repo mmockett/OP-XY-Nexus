@@ -35,6 +35,7 @@ const bool show_fps = false;
 const u32 fps_text = 16;
 
 const u32 budget = 240;                 // points of outlines changed a frame, at most
+const u32 most_nodes = 34;              // and nodes: many changed at once slow the device too
 const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
 const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round
 const i32 rise = 30;                    // how high the craft hovers at bite 100, px (make_panel.py's CRAFT_RISE)
@@ -173,16 +174,18 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
     }
 }
 
-// Brings the nodes that restyle to what the controls ask, within `left` points; resumes next
-// frame at the first that didn't fit.
-static inline void restyle(DisplayState& s, Frame& frame, const Controls& c, bool held, u32 left, u32& spent) {
+// Brings the nodes that restyle to what the controls ask, within `left` points and `count_left`
+// nodes; resumes next frame at the first that didn't fit.
+static inline void restyle(DisplayState& s, Frame& frame, const Controls& c, bool held, u32 left, u32 count_left,
+                           u32& spent) {
     const u32 first = 8, count = city::restyle_end - first;
     u32 k = s.cursor < first || s.cursor >= city::restyle_end ? first : s.cursor;
     for (u32 n = 0; n < count; ++n, k = k + 1 == city::restyle_end ? first : k + 1) {
         const Node want = restyled(k, s, c, held);
         if (same(frame.nodes[k], want)) continue;
         const u32 cost = city::points[k];
-        if (!s.fresh && cost > left) break;
+        if (!s.fresh && (cost > left || !count_left)) break;
+        if (count_left) --count_left;
         frame.nodes[k] = want;
         left = cost > left ? 0 : left - cost;
         spent += cost;
@@ -365,14 +368,15 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     if (state.run >= course * unit) state.run -= course * unit;
 
     // What moves first; then the rest restyles within what's left.
-    u32 spent = 0;
+    u32 spent = 0, count = 0;
     for (u32 k = city::restyle_end; k < city::node_count; ++k) {
         const Node want = moved(k, state, c, held);
         if (same(frame.nodes[k], want)) continue;
         frame.nodes[k] = want;
         spent += city::points[k];
+        ++count;
     }
-    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, spent);
+    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, count < most_nodes ? most_nodes - count : 0, spent);
     state.fresh = 0;
     readout(state, input, frame);
 
