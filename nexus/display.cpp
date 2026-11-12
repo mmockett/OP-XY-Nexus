@@ -1,31 +1,29 @@
 #include "display.h"
 
-// Nexus's screen: a still isometric night city, the same every time, and a
-// white flying car with its wingman that crosses it, level, left to right,
-// while notes are held. They come in off the left, leave off the right and come
-// round again after a short gap; released, they ease to a stop wherever they
-// are. Small traffic crosses on three level lanes at different depths, a
-// searchlight sweeps from one roof, and the mast lights blink, all only while
-// the cars fly. Each lot's parts are a hash of its index (tools/make_panel.py
-// mirrors this, to draw previews).
+// Nexus's screen: a dense isometric city in greys, after a pixel-art picture: an elevated
+// monorail with a two-car train, the OP-XY advert tower, a sun billboard and a dot-matrix
+// hourglass, a helipad with a craft over it, masts, a dish, a ball tower and rooftop fans.
+// At rest it is still. While notes are held the train runs along its track, passing behind
+// the nearer towers and coming round again; the fans turn, the dish swings, the craft bobs
+// and the lights blink. Released, it all eases to a stop where it is.
 //
 // What the controls do to it:
-//   shape   the skyline: rolling for sine, ramps for saw, blocks for square, spikes for pulse
-//   detune  the wingman (layer II) drifts off the leader's line
-//   bright  the share of lit windows
-//   reso    the neon strips brighten
-//   chorus  the two cars weave apart and back, on the chorus's clock
-//   ring    rings on the masts, faint to bright, one then two
-//   touch   dark windows flare, one after another, while a note is held
-//   ribbon  the cars' height
+//   shape   the advert's pattern: circles for sine, ramps for saw, a checker for square, bars for pulse
+//   detune  the hourglass's two halves drift apart
+//   bright  how many windows and background lights are lit
+//   reso    the advert, the billboards and the neon edges brighten
+//   chorus  the train's speed
+//   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two
+//   swell   dark windows flare one after another while a note is held, and the pattern pulses
+//   bite    how high the craft hovers over the helipad: at 0 it has landed
 //
 // The Shift row shows in the header while Shift is held; the city doesn't draw it.
 //
-// The device pays for every point of an outline that changes, so a frame changes
-// at most `budget` points. While the cars fly they, the traffic and the searchlight
-// take about half; the city restyles within the rest, a whole lot at a time,
-// resuming where it left off. Nothing changes at rest. Only the towers that hide
-// something behind them are filled.
+// The city's towers, track and roofs are still artwork, each face clipped to what is seen of
+// it, so the screen is filled about once (tools/make_panel.py). What changes is a node, and the
+// device pays for every point of a node that changes, so a frame changes at most `budget`
+// points: what moves goes first, then the rest restyles within what's left, resuming where it
+// left off. Nothing changes at rest.
 namespace nexus {
 namespace screen {
 using namespace opxy::draw;
@@ -36,16 +34,12 @@ using opxy::u32;
 const bool show_fps = false;
 const u32 fps_text = 16;
 
-const u32 budget = 280;                 // points of outlines changed a frame, at most
-const i32 cruise = 110 * unit;          // the cars' speed while held, px a second
-const i32 speed_share = 596;            // 65536 / 110: speed as a share of cruise, Q10, by (speed * 596) >> 16
-const i32 behind = 66, apart = 16;      // the wingman behind the leader, px, and how far detune takes it
-// The lead car's course, px: from just off the left to where the wingman has left on the right, then a gap.
-const i32 course_left = -city::lead_right;
-const i32 course = 480 + behind + apart - city::wing_left + 70 - course_left;
-const i32 home = 300;                   // where the lead car rests after a reset, px
-const i32 car_y = 132, car_rise = 48;   // the lead car's height on screen at ribbon 0, and how far ribbon lifts it, px
-const u32 beam_points = 4;
+const u32 budget = 240;                 // points of outlines changed a frame, at most
+const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
+const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round
+const i32 rise = 30;                    // how high the craft hovers at bite 100, px (make_panel.py's CRAFT_RISE)
+const i32 drift = 5;                    // how far each half of the hourglass moves at detune 100, px (SAND_DRIFT)
+const i32 course = city::train_end - city::train_start + gap;   // the train's loop, px
 
 static inline u32 hash(i32 i, i32 j, u32 k) {
     u32 h = static_cast<u32>(i) * 374761393u + static_cast<u32>(j) * 668265263u + k * 1442695041u;
@@ -56,20 +50,6 @@ static inline u32 r16(i32 i, i32 j, u32 k) { return hash(i, j, k) >> 16; }
 static inline u32 q16(i32 control) { return control < 0 ? 0u : static_cast<u32>(control) >> 15; }
 static inline u32 smallest(u32 a, u32 b) { return a < b ? a : b; }
 
-// 3u^2 - 2u^3, Q16
-static inline u32 smooth(u32 u) {
-    const u32 u2 = (u * u) >> 16;
-    return (u2 * (196608u - 2 * u)) >> 16;
-}
-// The skyline's wave at a phase, Q16: the oscillator's morph, drawn in towers.
-static inline u32 wave(u32 ph, u32 s) {
-    const u32 sine = ph < 32768u ? smooth(2 * ph) : smooth(131070u - 2 * ph);
-    const u32 saw = ph, square = ph < 32768u ? 65535u : 0u;
-    if (s < 21845u) return static_cast<u32>(static_cast<i32>(sine) + ((static_cast<i32>(saw) - static_cast<i32>(sine)) * static_cast<i32>(s * 3) >> 16));
-    if (s < 43690u) return static_cast<u32>(static_cast<i32>(saw) + ((static_cast<i32>(square) - static_cast<i32>(saw)) * static_cast<i32>((s - 21845u) * 3) >> 16));
-    const u32 width = 32768u - (((s - 43690u) * 3 * 24904u) >> 16);
-    return ph < width ? 65535u : 0u;
-}
 // sin(2 pi x) for a Q16 turn, Q10: a parabola, close enough for a sway.
 static inline i32 sway(u32 turn) {
     const i32 x = static_cast<i32>(static_cast<opxy::i16>(turn & 0xffffu));   // -32768..32767 is -pi..pi
@@ -77,7 +57,7 @@ static inline i32 sway(u32 turn) {
     return (x * (32768 - a)) >> 18;                                         // 4 x (1 - |x|), Q10
 }
 
-struct Controls { u32 shape, detune, bright, reso, chorus, ring, touch, ribbon; };
+struct Controls { u32 shape, detune, bright, reso, chorus, ring, swell, bite; };
 
 // ------------------------------------------------------------------ nodes and what they cost
 static inline Node pose(i32 x, i32 y, i32 scale, u32 shade, Paint paint) {
@@ -92,161 +72,122 @@ static inline Node pose(i32 x, i32 y, i32 scale, u32 shade, Paint paint) {
     return n;
 }
 static inline Node parked() { return pose(hidden_x * unit, hidden_y * unit, unit, 0, keep); }
+static inline Node home(u32 k, u32 shade, Paint paint) {
+    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, shade, paint);
+}
 static inline bool same(const Node& a, const Node& b) {
     return a.x == b.x && a.y == b.y && a.scale == b.scale && a.cos == b.cos && a.sin == b.sin &&
            a.shade == b.shade && a.paint == b.paint;
 }
-// Sets a node, adding its points to `spent` when it changes.
-static inline void set(Frame& frame, u32 n, const Node& value, u32& spent) {
-    if (same(frame.nodes[n], value)) return;
-    frame.nodes[n] = value;
-    spent += city::points[n];
+
+// A grey from low to high by a Q16 amount.
+static inline u32 between(u32 low, u32 high, u32 amount) {
+    const u32 v = low + ((amount * (high - low + 1)) >> 16);
+    return v > high ? high : v;
+}
+// The advert's pattern for a shape: 0 circles (sine), 1 ramps (saw), 2 a checker (square), 3 bars (pulse).
+static inline u32 pattern_of(u32 shape) { return shape < 7864u ? 0 : shape < 19661u ? 1 : shape < 45875u ? 2 : 3; }
+// A ring's level, 0 (none) or 1..3 faint to bright: the first ring comes in, then the second.
+static inline u32 ring_level(u32 g, u32 slot) {
+    if (slot == 0) return g == 0 ? 0 : 1 + smallest(2u, (g * 6) >> 16);
+    return g < 32768u ? 0 : 1 + smallest(2u, ((g - 32768u) * 6) >> 16);
+}
+// While a note is held the pattern pulses, up to two greys brighter at 1.5 Hz, by swell.
+static inline u32 pulse(const DisplayState& s, const Controls& c, bool held) {
+    if (!held) return 0;
+    const u32 t = (static_cast<u32>(s.clock) * 3u / 2u) & 1023u;
+    const u32 tri = t < 512u ? t : 1023u - t;
+    return (tri * (c.swell >> 8) * 3u) >> 17;
 }
 
 // ------------------------------------------------------------------ the city
-// What a lot shows: `form` packs its scale (bits 0-5), neon (6-8: 0 none, 1..4 dim to bright),
-// two rings (9-10, 11-12: 0 none, 1..3 faint to bright), a lit sign (13), its mast light on (14)
-// and bit 31, so that no look is 0; `lit` holds its windows, two bits each.
-struct Look { u32 form, lit; };
-
-static inline i32 scale_of(u32 form) { return 614 + static_cast<i32>(form & 63u) * 11; }   // Q10, 0.6 .. 1.28
-
-static inline Look desired(u32 k, const Controls& c, bool held, i32 hold, u32 serial, i32 clock) {
-    const city::Lot& lot = city::lots[k];
-    const i32 i = static_cast<i32>(k);
-    const u32 sky = wave((lot.column * 11916u) & 0xffffu, c.shape);
-    const u32 mix = (sky * 39322u + r16(i, 0, 1) * 26214u) >> 16;
-    Look look;
-    look.form = 1u << 31 | ((mix * 63u) >> 16);
-    look.lit = 0;
-    const i32 rise = 154 + static_cast<i32>((c.touch * 973u) >> 16);   // the flare's spread, Q10 seconds
-    for (u32 w = 0; w < lot.windows; ++w) {
-        const i32 j = static_cast<i32>(w);
-        u32 v = 0;
-        if (r16(i, j, 20) < c.bright) v = 1;
-        else if (held && c.touch && r16(i * 7 + j, static_cast<i32>(serial), 3) < (c.touch >> 1) &&
-                 hold >= static_cast<i32>((r16(i, j, 40) * static_cast<u32>(rise)) >> 16)) v = 2;
-        look.lit |= v << (2 * w);
+// What a node that restyles shows for the controls.
+static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, bool held) {
+    const u32 low = city::low[k], high = city::high[k], p = city::param[k];
+    switch (city::kind[k]) {
+    case city::window: {
+        if ((p << 8) < c.bright) return home(k, high, fill_and_stroke);
+        // swell: dark windows flare, each note its own few, one after another
+        const i32 spread = 154 + static_cast<i32>((c.swell * 973u) >> 16);   // Q10 seconds
+        if (held && c.swell && r16(static_cast<i32>(k), static_cast<i32>(s.serial), 3) < (c.swell >> 1) &&
+            s.hold >= static_cast<i32>((r16(static_cast<i32>(k), 0, 40) * static_cast<u32>(spread)) >> 16))
+            return home(k, 15, fill_and_stroke);
+        return home(k, low, fill_and_stroke);
     }
-    if (lot.neon) look.form |= (1 + smallest(3u, (c.reso * 4) >> 16)) << 6;
-    if (lot.mast) {
-        const u32 g = c.ring;
-        const u32 first = g == 0 ? 0 : 1 + smallest(2u, (g * 6) >> 16);
-        const u32 second = g < 32768u ? 0 : 1 + smallest(2u, ((g - 32768u) * 6) >> 16);
-        look.form |= first << 9 | second << 11;
-        // the mast light: on for 0.27 s of every second, each mast at its own phase
-        if (((static_cast<u32>(clock) + (r16(i, 0, 9) >> 6)) & 1023u) < 280u) look.form |= 1u << 14;
+    case city::glow: return home(k, (p << 8) < c.bright ? high : low, fill_and_stroke);
+    case city::glyph:
+    case city::panel:
+    case city::neon: return home(k, between(low, high, c.reso), fill_and_stroke);
+    case city::pattern:
+        if (p != pattern_of(c.shape)) return parked();
+        return home(k, smallest(15u, between(low, high, c.reso) + pulse(s, c, held)), fill_and_stroke);
+    case city::sand: {
+        // in half pixels, the top half up and the bottom half down
+        const i32 d = static_cast<i32>((c.detune * static_cast<u32>(drift) * 2u) >> 16) * (unit / 2);
+        return pose(city::home_x[k] * unit, city::home_y[k] * unit + (p ? d : -d), unit, 0, keep);
     }
-    if (lot.sign && r16(i, 0, 8) < c.bright + 9830u) look.form |= 1u << 13;
-    return look;
+    case city::ring: {
+        const u32 level = ring_level(c.ring, p);
+        return level ? home(k, low + (level - 1) * (high - low) / 2, stroke) : parked();
+    }
+    default: return home(k, 0, keep);
+    }
 }
 
-// One part of a lot: every part scales about the lot's pivot, so its parts stay together.
-static inline Node part(const city::Lot& lot, u32 node, i32 s, u32 shade, Paint paint) {
-    return pose(lot.x * unit + s * city::origin_x[node], lot.y * unit + s * city::origin_y[node], s, shade, paint);
-}
-
-const u32 most_parts = 1 + city::most_windows + 1 + 2 + 3;
-
-// A lot's nodes for a look, in order from its first.
-static inline u32 lot_parts(const city::Lot& lot, const Look& look, Node* out) {
-    const i32 s = scale_of(look.form);
-    u32 node = lot.first, n = 0;
-    out[n++] = part(lot, node++, s, 0, keep);                                       // the body
-    for (u32 w = 0; w < lot.windows; ++w, ++node) {
-        const u32 v = (look.lit >> (2 * w)) & 3u;
-        out[n++] = v ? part(lot, node, s, v == 2 ? 3 : 1 + ((lot.faces >> w) & 1u), fill_and_stroke) : parked();
+// What a node that moves shows: on the clock, which runs only while the train does.
+static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool held) {
+    const u32 clock = static_cast<u32>(s.clock), p = city::param[k];
+    switch (city::kind[k]) {
+    case city::light:   // on for about a quarter of every second, each at its own phase
+        return home(k, ((clock + p * 4u) & 1023u) < 230u ? city::high[k] : city::low[k], fill_and_stroke);
+    case city::fan: {   // three poses of its blades, eight a second
+        const u32 pose_now = ((clock * 8u + (p / 3u) * 341u) >> 10) % 3u;
+        return pose_now == p % 3u ? home(k, 0, keep) : parked();
     }
-    if (lot.neon) out[n++] = part(lot, node++, s, 3 + ((look.form >> 6) & 7u), fill_and_stroke);
-    if (lot.sign) {
-        out[n++] = part(lot, node++, s, 0, keep);                                   // the blade
-        out[n++] = (look.form >> 13 & 1u) ? part(lot, node, s, 11, fill_and_stroke) : parked();
-        ++node;
+    case city::dish: {  // swings up to 8 degrees either way, a whole degree at a time
+        Node n = home(k, 0, keep);
+        const Turn t = rotation(((sway(clock * 5u) * 8) >> 10) * 10);
+        n.cos = t.cos;
+        n.sin = t.sin;
+        return n;
     }
-    if (lot.mast) {
-        for (u32 r = 0; r < 2; ++r, ++node) {
-            const u32 level = (look.form >> (9 + 2 * r)) & 3u;
-            out[n++] = level ? part(lot, node, s, 7 + level, stroke) : parked();
+    case city::craft:
+    case city::shadow: {
+        const i32 up = static_cast<i32>((c.bite * static_cast<u32>(rise)) >> 16);   // whole px
+        if (city::kind[k] == city::shadow)
+            return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit - up * 10, 0, keep);
+        const i32 bob = held && up ? (sway(clock * 41u) + 512) >> 10 : 0;          // -1, 0 or 1 px
+        Node n = pose(city::home_x[k] * unit, (city::home_y[k] - up + bob) * unit, unit, 0, keep);
+        if (p) {   // its beacon
+            n.shade = ((clock + 300u) & 1023u) < 120u ? city::high[k] : city::low[k];
+            n.paint = fill_and_stroke;
         }
-        out[n++] = part(lot, node, s, (look.form >> 14 & 1u) ? 13 : 12, fill_and_stroke);
+        return n;
     }
-    return n;
+    case city::train: {
+        if (s.run >= (city::train_end - city::train_start) * unit) return parked();
+        const i32 d = city::train_start * unit + s.run;
+        return pose(city::home_x[k] * unit + d, city::home_y[k] * unit + (d >> 1), unit, 0, keep);
+    }
+    default: return home(k, 0, keep);
+    }
 }
 
-// Brings lots to their looks, a whole lot at a time, within `left` points; resumes next
-// frame at the first lot that didn't fit.
-static inline void draw_city(DisplayState& state, Frame& frame, const Controls& c, bool held, u32 left, u32& spent) {
-    u32 k = state.cursor;
-    for (u32 count = 0; count < city::lot_count; ++count, k = k + 1 == city::lot_count ? 0 : k + 1) {
-        const Look want = desired(k, c, held, state.hold, state.serial, state.clock);
-        if (!state.fresh && want.form == state.form[k] && want.lit == state.lit[k]) continue;
-        const city::Lot& lot = city::lots[k];
-        Node parts[most_parts];
-        const u32 n = lot_parts(lot, want, parts);
-        u32 cost = 0;
-        for (u32 p = 0; p < n; ++p)
-            if (!same(frame.nodes[lot.first + p], parts[p])) cost += city::points[lot.first + p];
-        if (!state.fresh && cost > left) break;
-        for (u32 p = 0; p < n; ++p) frame.nodes[lot.first + p] = parts[p];
+// Brings the nodes that restyle to what the controls ask, within `left` points; resumes next
+// frame at the first that didn't fit.
+static inline void restyle(DisplayState& s, Frame& frame, const Controls& c, bool held, u32 left, u32& spent) {
+    const u32 first = 8, count = city::restyle_end - first;
+    u32 k = s.cursor < first || s.cursor >= city::restyle_end ? first : s.cursor;
+    for (u32 n = 0; n < count; ++n, k = k + 1 == city::restyle_end ? first : k + 1) {
+        const Node want = restyled(k, s, c, held);
+        if (same(frame.nodes[k], want)) continue;
+        const u32 cost = city::points[k];
+        if (!s.fresh && cost > left) break;
+        frame.nodes[k] = want;
         left = cost > left ? 0 : left - cost;
         spent += cost;
-        state.form[k] = want.form;
-        state.lit[k] = want.lit;
     }
-    state.cursor = k;
-}
-
-// The searchlight, on its lot's roof: it sweeps 30 degrees either side, once in about 7 s, as the cars fly.
-static inline void draw_beam(const DisplayState& state, Frame& frame, u32& spent) {
-    const city::Lot& lot = city::lots[city::beam_lot];
-    const i32 s = scale_of(state.form[city::beam_lot]);
-    Node beam = pose(lot.x * unit + s * city::beam_x, lot.y * unit + s * city::beam_y, 2 * unit, 0, keep);
-    const Turn t = rotation((sway(static_cast<u32>(state.clock) * 9u) * 300) >> 10);
-    beam.cos = t.cos;
-    beam.sin = t.sin;
-    set(frame, city::beam, beam, spent);
-}
-
-// The traffic: each lane's cars at their places along its loop, which runs 10 px past each side.
-static inline void draw_traffic(const DisplayState& state, Frame& frame, u32& spent) {
-    u32 car = 0;
-    for (u32 l = 0; l < city::lane_count; ++l) {
-        const city::Lane& lane = city::lanes[l];
-        for (u32 n = 0; n < lane.cars; ++n, ++car) {
-            i32 p = city::spots[car] * unit + state.lane[l];
-            if (p >= city::lane_length * unit) p -= city::lane_length * unit;
-            const i32 x = lane.rightward ? city::lane_left * unit + p : (city::lane_left + city::lane_length) * unit - p;
-            set(frame, lane.first + n, pose(x, lane.y * unit, unit, 0, keep), spent);
-        }
-    }
-}
-
-// The cars: the leader, and the wingman (layer II) behind it, off its line by detune. They bob
-// and bank gently as they fly, in step with the speed; off screen, they're parked.
-static inline void draw_cars(const DisplayState& state, Frame& frame, const Controls& c, bool calm, u32& spent) {
-    const u32 clock = static_cast<u32>(state.clock);
-    const i32 share = calm ? 0 : clamp((state.speed * speed_share) >> 16, 0, unit);   // Q10
-    const i32 bob = ((sway(clock * 31u) * 3 / 2) * share) >> 10;                 // 1.5 px at about 0.5 Hz
-    const i32 bank = (((sway(clock * 31u + 16384u) * 15) >> 10) * share) >> 10;  // 1.5 degrees, nose up as it rises
-    // chorus: the cars weave apart, up to 5 px each, on the chorus's 0.9 Hz clock
-    const i32 weave = (static_cast<i32>(c.chorus >> 6) * 5 * sway(clock * 58u)) >> 10;
-    const i32 x = course_left * unit + state.run;
-    const i32 y = car_y * unit - static_cast<i32>((c.ribbon * static_cast<u32>(car_rise)) >> 6) + bob + weave;
-    const Turn tilt = rotation(-bank);
-    const bool lead = x + city::lead_right * unit > 0 && x + city::lead_left * unit < 480 * unit;
-    for (u32 k = 0; k < city::lead_nodes; ++k) {
-        Node v = lead ? pose(x, y, unit, 0, keep) : parked();
-        if (lead) { v.cos = tilt.cos; v.sin = tilt.sin; }
-        set(frame, city::car_first + k, v, spent);
-    }
-    const i32 off = static_cast<i32>((c.detune * static_cast<u32>(apart)) >> 6);   // Q10 px, 0..16
-    const i32 wx = x - behind * unit - off, wy = y + 16 * unit + off * 3 / 5 - 2 * weave;
-    const bool wing = c.detune > 1966u && wx + city::wing_right * unit > 0 && wx + city::wing_left * unit < 480 * unit;
-    for (u32 k = 0; k < city::wing_nodes; ++k) {
-        Node v = wing ? pose(wx, wy, unit, 0, keep) : parked();
-        if (wing) { v.cos = tilt.cos; v.sin = tilt.sin; }
-        set(frame, city::car_first + city::lead_nodes + k, v, spent);
-    }
+    s.cursor = k;
 }
 
 // The frame-rate readout, as BENCH counts it: frames until a second of elapsed time, and the
@@ -349,7 +290,7 @@ static inline void captions(char (&values)[8][header_capacity], const Controls& 
     // bright: 80 Hz .. 16 kHz, 7.64 octaves
     hertz_caption(values[2], times_exp2(80u, (c.bright * 7644u) / 1000u));
     // ribbon: -12st .. +12st
-    const i32 st = (static_cast<i32>(c.ribbon) * 24 + 32768) / 65536 - 12;
+    const i32 st = (static_cast<i32>(c.bite) * 24 + 32768) / 65536 - 12;
     values[7][0] = 0;
     if (st > 0) append(values[7], "+");
     char n[8];
@@ -386,15 +327,13 @@ inline void display_reset(DisplayState& state) {
     state.notes.reset();
     state.header.reset();
     state.fresh = 1;
-    state.cursor = 0;
-    state.run = (screen::home - screen::course_left) * opxy::draw::unit;
+    state.cursor = 8;
+    state.run = -city::train_start * opxy::draw::unit;   // the train at home
     state.speed = 0;
     state.clock = 0;
     state.hold = 0;
     state.serial = 0;
-    for (opxy::u32 l = 0; l < city::lane_count; ++l) state.lane[l] = 0;
     state.frames = state.acc = state.worst = state.fps = state.worst_shown = 0;
-    for (opxy::u32 k = 0; k < city::lot_count; ++k) state.form[k] = state.lit[k] = 0;
 }
 
 inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& frame) {
@@ -405,18 +344,18 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     Controls c;
     c.shape = q16(input.slots[0]); c.detune = q16(input.slots[1]); c.bright = q16(input.slots[2]);
     c.reso = q16(input.slots[3]); c.chorus = q16(input.slots[4]); c.ring = q16(input.slots[5]);
-    c.touch = q16(input.slots[6]); c.ribbon = q16(input.slots[7]);
+    c.swell = q16(input.slots[6]); c.bite = q16(input.slots[7]);
 
-    // Touch: each note re-chooses the windows that flare, and they light one by one.
+    // Swell: each note re-chooses the windows that flare, and they light one by one.
     if (!held) state.hold = 0;
     else if (input.note_serial != state.serial) { state.serial = input.note_serial; state.hold = 0; }
     else state.hold = clamp(state.hold + dt, 0, 8 * unit);
 
-    // The cars: ease up to speed while notes are held, and down to a stop.
-    const i32 target = held ? cruise : 0;
+    // The train: eases up to chorus's speed while notes are held, and down to a stop.
+    const i32 target = held ? (slow + static_cast<i32>((c.chorus * static_cast<u32>(fast - slow)) >> 16)) * unit : 0;
     if (input.reduced_motion) state.speed = target;
     else {
-        // signed throughout: a slowing car's negative step must stay negative
+        // signed throughout: a slowing train's negative step must stay negative
         const i32 ease = dt * 6 < 1024 ? dt * 6 : 1024;
         state.speed += ((target - state.speed) >> 4) * ease >> 6;
     }
@@ -424,19 +363,16 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     if (state.speed > 0) state.clock = (state.clock + dt) & 0xfffffff;
     state.run += (state.speed * dt) >> 10;
     if (state.run >= course * unit) state.run -= course * unit;
-    // The traffic, each lane at its own share of the cars' speed.
-    for (u32 l = 0; l < city::lane_count; ++l) {
-        state.lane[l] += ((state.speed * city::lanes[l].share) >> 10) * dt >> 10;
-        if (state.lane[l] >= city::lane_length * unit) state.lane[l] -= city::lane_length * unit;
-    }
 
-    // What moves first; then the city restyles within what's left, the searchlight's points kept back.
+    // What moves first; then the rest restyles within what's left.
     u32 spent = 0;
-    draw_cars(state, frame, c, input.reduced_motion != 0, spent);
-    draw_traffic(state, frame, spent);
-    const u32 left = spent + beam_points < budget ? budget - spent - beam_points : 0;
-    draw_city(state, frame, c, held, left, spent);
-    draw_beam(state, frame, spent);
+    for (u32 k = city::restyle_end; k < city::node_count; ++k) {
+        const Node want = moved(k, state, c, held);
+        if (same(frame.nodes[k], want)) continue;
+        frame.nodes[k] = want;
+        spent += city::points[k];
+    }
+    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, spent);
     state.fresh = 0;
     readout(state, input, frame);
 

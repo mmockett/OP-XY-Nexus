@@ -31,7 +31,7 @@ jobs:
       - name: Preview and host tools
         run: |
           sudo apt-get update && sudo apt-get install -y clang lld
-          python -m pip install numpy==2.3.5
+          python -m pip install numpy==2.3.5 shapely==2.2.0
       - name: The artwork and tables are what the generators write
         run: |
           python nexus/nexus/tools/make_panel.py

@@ -1,158 +1,91 @@
 #!/usr/bin/env python3
-"""Nexus's screen: a still isometric night city and a white flying car.
+"""Nexus's screen: a dense isometric city in greys, drawn like pixel art, with a
+monorail train on an elevated track, an OP-XY advert tower, billboards, a
+helipad, masts, a dish, a ball tower and rooftop fans.
 
 Writes ../panel.svg.fragment (the artwork), ../city.h (the tables display.cpp
-reads) and ../tests/outlines.h (each outline's measures, for the host checks),
-from one description, so they always agree. With --preview <dir> it also draws
-a few states as SVG, through a mirror of display.cpp's frame logic, for looking
-at the picture without building anything.
+reads) and ../tests/outlines.h (each node's outline measures, for the host
+checks), from one description, so they always agree. With --preview <dir> it
+also draws a few states as SVG, through a mirror of display.cpp's frame logic,
+for looking at the picture without building anything.
 
     python3 tools/make_panel.py [--preview <dir>]
 
-Pure Python; nothing is compiled.
+Pure Python with shapely 2.2.0 (a prebuilt wheel); nothing is compiled.
 
-The city is one fixed grid of lots seen from the isometric camera, the same
-every time. Each lot is a tower: one outline for its body (a box with up to two
-setback tiers and sometimes a mast, its inner edges drawn as thin slits), six
-windows that light one by one, and sometimes a neon strip, a blade sign, and on
-a mast two rings and a light that blinks. Every part comes from a hash of the
-lot's index. A tower is filled black only where it hides something behind it.
-
-Three level lanes of small traffic cross the sky at different depths, drawn
-between the rows they pass behind, and a searchlight sweeps from one roof. The
-white car and its wingman fly level across in front of it all.
+The city is still, so it is drawn once: every face is a filled outline, and
+each is clipped to what is actually seen of it, back to front, so the screen
+is filled about once over. What changes is a node: lit windows, background
+lights, the advert's text and pattern, the billboards, the hourglass's dots,
+neon edges, rings, blinking lights, fans, the dish, a craft over the helipad
+and the two-car train. The train is drawn after what is behind the track and
+before what is in front of it, so it passes behind the nearer towers.
 """
 import json
 import math
 import pathlib
 import sys
 
+import shapely
+import shapely.affinity
+from shapely.geometry import Polygon, box as rect
+
 HERE = pathlib.Path(__file__).resolve().parent.parent
 ID = json.loads((HERE / "definition.json").read_text())["id"]
-M32 = 0xFFFFFFFF
-C30 = math.cos(math.pi / 6)
-CELL = 64                         # the grid's pitch, world px
-OX, OY = 240, 40                  # the camera
-SLIT = 0.4                        # an inner edge: a slit this wide, drawn by its two sides
-MOST_WINDOWS = 10                 # window nodes on a lot, at most
-WINDOW_BYTES = 32150              # the artwork's share for windows
-SMALLEST_SCALE = 614 / 1024       # display.cpp's smallest lot scale
-BUDGET = 280                      # points of changed outlines a frame (display.cpp's budget)
+GRID = 0.25                       # every static outline's points sit on this grid, px
+OX, OY = 64, 150                  # the camera: world (0, 0, 0) on screen
+TOP, BOTTOM = 38, 220             # the stage, below the header
+STAGE = rect(0, TOP, 480, BOTTOM)
+BUDGET = 240                      # display.cpp's budget: points of changed outlines a frame
+TRAIN_REACH = 320                 # px either way the train can be from home (for the depth order)
+CRAFT_RISE = 30                   # px the craft rises at bite 100 (display.cpp's rise)
+SAND_DRIFT = 5                    # px each half of the hourglass moves at detune 100 (display.cpp's drift)
+OCCLUDE = 100                     # px^2: a static outline this big hides what is behind it
+HEADER_FILL = 480 * 38 + 8 * 60 * 20   # the header's black and its bars, px^2
+ARTWORK_LIMIT = 65536             # the SDK's limit on panel.svg.fragment (tooling/preview.py)
+
+# ------------------------------------------------------------------ the greys
+# Sixteen steps, black to near white: the palette, and every static fill uses them too.
+TONES = [0, 18, 28, 38, 50, 62, 74, 86, 100, 114, 130, 148, 166, 186, 208, 236]
+PAL_WIDTH = 0.5                   # the palette's stroke: a node painted from it grows 0.25 px a side
 
 
-def hash32(i, j, k):
-    """display.cpp's hash: the same integers on both sides."""
-    h = (i * 374761393 + j * 668265263 + k * 1442695041) & M32
-    h = ((h ^ (h >> 13)) * 1274126177) & M32
-    return h ^ (h >> 16)
+def grey(t):
+    v = TONES[t]
+    return "#%02X%02X%02X" % (v, v, v)
 
 
-def r16(i, j, k):
-    return hash32(i, j, k) >> 16
+# Shades by distance: (top, left, right). Nearer is darker; the haze is light.
+NEAR = (9, 6, 3)
+MID = (9, 7, 4)
+FAR = (10, 8, 5)
+HAZE = (12, 11, 10)
+SKY = 12
 
 
-def proj(x, y, z):
-    return ((x - y) * C30, (x + y) * 0.5 - z)
+def P(x, y, z):
+    """The isometric camera, 2:1: world x runs down-right, y down-left, z up."""
+    return (OX + x - y, OY + (x + y) / 2 - z)
 
 
 def num(v):
-    s = f"{v:.1f}"
-    s = s.rstrip("0").rstrip(".") if "." in s else s
+    s = f"{v:.2f}".rstrip("0").rstrip(".")
     return "0" if s in ("-0", "") else s
 
 
-# ------------------------------------------------------------------ palette (display.cpp names these)
-PALETTE = [  # fill, stroke, width
-    ("#000000", "#000000", 0.5),   # 0
-    ("#B4B4B4", "#B4B4B4", 0.3),   # 1 a lit window, left face
-    ("#828282", "#828282", 0.3),   # 2 a lit window, right face
-    ("#F0F0F0", "#F0F0F0", 0.3),   # 3 a window flaring under touch
-    ("#505050", "#505050", 0.3),   # 4..7 neon, dim to bright with reso
-    ("#787878", "#787878", 0.3),
-    ("#A0A0A0", "#A0A0A0", 0.3),
-    ("#C8C8C8", "#C8C8C8", 0.3),
-    ("#000000", "#464646", 0.8),   # 8..10 a mast's ring, faint to bright with ring
-    ("#000000", "#7D7D7D", 0.8),
-    ("#000000", "#C3C3C3", 0.8),
-    ("#BEBEBE", "#BEBEBE", 0.3),   # 11 a lit sign
-    ("#2E2E2E", "#2E2E2E", 0.3),   # 12 a mast light, off
-    ("#F5F5F5", "#F5F5F5", 0.3),   # 13 a mast light, on
-]
-EDGE = ["#3C3C3C", "#444444", "#4E4E4E", "#585858", "#626262", "#6C6C6C", "#767676", "#808080"]  # by row, back to front
-BLADE = ("#000000", "#5A5A5A", 0.5)
-BEAM = ("#000000", "#3C3C3C", 0.4)
-LANE_PAINT = ["#5C5C5C", "#8A8A8A", "#B8B8B8"]
-
-
-class Node:
-    def __init__(self, role, points, paint, fill=True, origin=None):
-        self.role, self.points, self.paint, self.fill = role, points, paint, fill
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        if origin is None:
-            origin = (round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2))
-        self.ox, self.oy = origin
-
-
-# ------------------------------------------------------------------ outline geometry
 def sub(a, b): return (a[0] - b[0], a[1] - b[1])
-def add(a, b): return (a[0] + b[0], a[1] + b[1])
-def mul(a, s): return (a[0] * s, a[1] * s)
 def length(a): return math.hypot(a[0], a[1])
-def unitv(a): n = length(a); return (a[0] / n, a[1] / n)
 def cross(a, b): return a[0] * b[1] - a[1] * b[0]
 
 
-def toward(a, b, d):
-    """The point d px from a on the way to b."""
-    return add(a, mul(unitv(sub(b, a)), d))
+def area(pts):
+    return 0.5 * sum(cross(pts[k], pts[(k + 1) % len(pts)]) for k in range(len(pts)))
 
 
-def left_normal(a, b):
-    d = unitv(sub(b, a))
-    return (d[1], -d[0])
-
-
-def meet(p1, d1, p2, d2):
-    """Where the line p1 + t d1 meets p2 + s d2."""
-    den = cross(d1, d2)
-    t = cross(sub(p2, p1), d2) / den
-    return add(p1, mul(d1, t))
-
-
-def tree_contour(points, edges, root, w):
-    """The outline around a tree of thin lines, a slit w wide: out along one side of each
-    branch and back along the other, a flat end at each tip. Returns the points from the
-    root's one side to its other. edges: {vertex: [neighbours]}; the tour takes each
-    vertex's branches in turn by angle, so the outline never crosses itself."""
-    tour = []
-
-    def walk(v, parent):
-        nbrs = [n for n in edges[v] if n != parent]
-        if parent is not None:
-            back = math.atan2(*reversed(sub(points[parent], points[v])))
-            nbrs.sort(key=lambda n: (math.atan2(*reversed(sub(points[n], points[v]))) - back) % (2 * math.pi))
-        for n in nbrs:
-            tour.append((v, n))
-            walk(n, v)
-            tour.append((n, v))
-    walk(root, None)
-    h = w / 2
-    lines = []
-    for a, b in tour:
-        n = left_normal(points[a], points[b])
-        lines.append((add(points[a], mul(n, h)), sub(points[b], points[a]), n))
-    out = [lines[0][0]]
-    for k in range(len(tour) - 1):
-        (p1, d1, n1), (p2, d2, n2) = lines[k], lines[k + 1]
-        if tour[k][0] == tour[k + 1][1] and tour[k][1] == tour[k + 1][0]:   # a tip: a flat end
-            tip = points[tour[k][1]]
-            out += [add(tip, mul(n1, h)), add(tip, mul(n2, h))]
-        else:
-            out.append(meet(p1, d1, p2, d2))
-    p, d, n = lines[-1]
-    out.append(add(p, d))
-    return out
+def start_long(pts):
+    """Rotates an outline to close on its longest edge: a short closing edge draws a sliver."""
+    best = max(range(len(pts)), key=lambda k: length(sub(pts[(k + 1) % len(pts)], pts[k])))
+    return pts[best + 1:] + pts[:best + 1]
 
 
 def segments_cross(a, b, c, d):
@@ -174,638 +107,1024 @@ def simple(pts):
     return True
 
 
-def splice(ring, at, contour):
-    """Replaces ring[at] with a slit's contour, whichever way round keeps it simple."""
-    for c in (contour, list(reversed(contour))):
-        trial = ring[:at] + c + ring[at + 1:]
-        if simple(trial):
-            return trial
-    raise AssertionError("a slit crosses the outline")
-
-
-def area(pts):
-    return 0.5 * sum(cross(pts[k], pts[(k + 1) % len(pts)]) for k in range(len(pts)))
-
-
-def start_long(pts):
-    """Rotates an outline to close on its longest edge: a short closing edge draws a sliver."""
-    best = max(range(len(pts)), key=lambda k: length(sub(pts[(k + 1) % len(pts)], pts[k])))
-    return pts[best + 1:] + pts[:best + 1]
-
-
-def inside(p, poly):
-    c = False
-    n = len(poly)
-    for k in range(n):
-        a, b = poly[k], poly[(k + 1) % n]
-        if (a[1] > p[1]) != (b[1] > p[1]):
-            x = a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
-            if x > p[0]:
-                c = not c
-    return c
-
-
-def overlap(p, q):
-    """Whether two simple outlines overlap."""
-    for i in range(len(p)):
-        for j in range(len(q)):
-            if segments_cross(p[i], p[(i + 1) % len(p)], q[j], q[(j + 1) % len(q)]):
-                return True
-    return inside(p[0], q) or inside(q[0], p)
-
-
-def clip_area(pts, x0, y0, x1, y1):
-    """The outline's area inside a box (Sutherland-Hodgman)."""
-    def clip(poly, keep, cut):
-        out = []
-        for k in range(len(poly)):
-            a, b = poly[k - 1], poly[k]
-            if keep(b):
-                if not keep(a):
-                    out.append(cut(a, b))
-                out.append(b)
-            elif keep(a):
-                out.append(cut(a, b))
-        return out
-
-    def at_x(x):
-        return lambda a, b: (x, a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]))
-
-    def at_y(y):
-        return lambda a, b: (a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]), y)
-    for keep, cut in ((lambda p: p[0] >= x0, at_x(x0)), (lambda p: p[0] <= x1, at_x(x1)),
-                      (lambda p: p[1] >= y0, at_y(y0)), (lambda p: p[1] <= y1, at_y(y1))):
-        pts = clip(pts, keep, cut)
-        if not pts:
-            return 0.0
-    return abs(area(pts))
-
-
-# ------------------------------------------------------------------ the lots
-def lots():
+def turns(pts):
     out = []
-    for j in range(-6, 10):
-        for i in range(-8, 12):
-            bx, by = proj(i * CELL + CELL / 2, j * CELL + CELL / 2, 0)
-            bx, by = OX + bx, OY + by
-            if -40 <= bx <= 520 and 44 <= by <= 270:
-                out.append((i, j, round(bx), round(by)))
-    out.sort(key=lambda l: (l[0] + l[1], l[0]))       # back to front: the drawing order
-    return [dict(t=t, i=i, j=j, x=x, y=y, row=i + j + 1, column=round((x + 40) / (CELL * C30)))
-            for t, (i, j, x, y) in enumerate(out)]
-
-
-def static(t):
-    """A lot's fixed parts, from a hash of its index."""
-    rs = lambda k: hash32(t, 0, 100 + k) / 2 ** 32
-    s = {}
-    a0 = 11 + round(5 * rs(0))
-    h0 = round(30 + 44 * rs(1))
-    r = rs(2)
-    tiers = 0 if r < 0.3 else 1 if r < 0.75 else 2
-    boxes = [(a0, h0)]
-    a = a0
-    for k in range(tiers):
-        a = a - 3 - round(2 * rs(3 + k))
-        boxes.append((a, round((12 + 12 * rs(5 + k)) if k == 0 else (7 + 7 * rs(7)))))
-    s["mast"] = tiers > 0 and rs(8) < 0.42
-    s["mh"] = round(16 + 12 * rs(9))
-    s["neon"] = rs(10) < 0.55
-    s["sign"] = not s["mast"] and rs(11) < 0.35
-    # the whole outline stays within 62 px of its middle
-    over = 2 * a0 + sum(h for _, h in boxes) + s["mh"] * s["mast"] - 124
-    if over > 0:
-        boxes[0] = (a0, h0 - over)
-    s["boxes"] = boxes
-    return s
-
-
-def stack(s):
-    """Each box's half width and its floor and roof heights."""
-    out, z = [], 0
-    for a, h in s["boxes"]:
-        out.append((a, z, z + h))
-        z += h
-    return out
-
-
-def building(s):
-    """The building as one outline: its silhouette, with its inner edges as slits."""
-    B = stack(s)
-    P = lambda a, b, z: proj(a, b, z)
-    n = len(B) - 1
-    an, _, zt = B[n]
-    ring = [P(-an, -an, zt), P(an, -an, zt)]
-    xr, xl = {}, {}
-    for k in range(n, 0, -1):
-        a, z0, _ = B[k]
-        ap = B[k - 1][0]
-        xr[k] = (2 * a * C30, a - ap - z0)
-        ring += [xr[k], P(ap, -ap, z0)]
-    a0, _, z1 = B[0]
-    ring += [P(a0, -a0, 0), P(a0, a0, 0), P(-a0, a0, 0), P(-a0, a0, z1)]
-    for k in range(1, n + 1):
-        a, z0, z1k = B[k]
-        ap = B[k - 1][0]
-        xl[k] = (-2 * a * C30, a - ap - z0)
-        ring += [xl[k], P(-a, a, z1k)]
-    top_at = ring[0]
-    # the base box's inner edges: up the front corner and along the roof's two front edges
-    F, Fb, L, R = P(a0, a0, z1), P(a0, a0, 0), P(-a0, a0, z1), P(a0, -a0, z1)
-    pts = {"F": F, "Fb": Fb, "L": toward(L, F, 0.8), "R": toward(R, F, 0.8)}
-    ring = splice(ring, ring.index(Fb), tree_contour(pts, {"Fb": ["F"], "F": ["Fb", "L", "R"], "L": ["F"], "R": ["F"]},
-                                                  "Fb", SLIT))
-    for k in range(1, n + 1):
-        a, z0, zk = B[k]
-        Lt, Ft, Rt = P(-a, a, zk), P(a, a, zk), P(a, -a, zk)
-        Ftb, Ltb, Rtb = P(a, a, z0), P(-a, a, z0), P(a, -a, z0)
-        tp = {"Lt": Lt, "Ft": Ft, "Rt": toward(Rt, Ft, 0.8), "Ftb": Ftb, "Ltb": Ltb, "Rtb": Rtb,
-              "Xl": toward(xl[k], Ltb, 0.8), "Xr": toward(xr[k], Rtb, 0.8)}
-        tree = {"Lt": ["Ft"], "Ft": ["Lt", "Rt", "Ftb"], "Rt": ["Ft"], "Ftb": ["Ft", "Ltb", "Rtb"],
-                "Ltb": ["Ftb", "Xl"], "Rtb": ["Ftb", "Xr"], "Xl": ["Ltb"], "Xr": ["Rtb"]}
-        ring = splice(ring, ring.index(Lt), tree_contour(tp, tree, "Lt", SLIT))
-    if s["mast"]:
-        # a mast on the topmost corner: a thin spire, part of the same outline
-        i = ring.index(top_at)
-        prev, nxt = ring[i - 1], ring[(i + 1) % len(ring)]
-        mx, my = top_at
-        wl = meet(prev, sub(top_at, prev), (mx - 0.9, my), (0, 1))
-        wr = meet(top_at, sub(nxt, top_at), (mx + 0.9, my), (0, 1))
-        spire = [wl, (mx - 0.4, my - s["mh"]), (mx + 0.4, my - s["mh"]), wr]
-        ring = ring[:i] + spire + ring[i + 1:]
-        s["mast_top"] = (mx, my - s["mh"])
-        s["mast_foot"] = (mx, my)
-    s["roof"] = top_at
-    return start_long(ring)
-
-
-def quad_left(x0, x1, y, z0, z1):     # a quad on a face of constant y (the left face)
-    return [proj(x0, y, z1), proj(x1, y, z1), proj(x1, y, z0), proj(x0, y, z0)]
-
-
-def quad_right(x, y0, y1, z0, z1):    # a quad on a face of constant x (the right face)
-    return [proj(x, y0, z1), proj(x, y1, z1), proj(x, y1, z0), proj(x, y0, z0)]
-
-
-def windows(t, s):
-    """Candidate windows: lit runs on the base box's two faces and the first tier's, one at
-    most a floor on each face (so they never touch), clear of the neon strip and the sign,
-    in an order from the hash. Each is (face, outline): face 0 left, 1 right."""
-    B = stack(s)
-    out = []
-    for b in range(min(2, len(B))):
-        a, z0, z1 = B[b]
-        floors = max(1, int((z1 - z0 - 6) // 5))
-        for face in (0, 1):
-            for f in range(floors):
-                rs = lambda q: hash32(t, b * 64 + face * 32 + f, 200 + q) / 2 ** 32
-                if rs(0) > (0.62 if b == 0 else 0.5):
-                    continue
-                z = z0 + 3 + f * 5
-                w = 3.5 + rs(1) * (4.5 if b else 7)
-                lo, hi = -a + 2, a - 2 - w
-                if b == 0 and face == 0 and s["sign"]:
-                    hi = min(hi, a - 7.5 - w)
-                if b == 0 and face == 1 and s["neon"]:
-                    lo = max(lo, -a + 4.5)
-                if hi < lo:
-                    continue
-                x = lo + rs(2) * (hi - lo)
-                if face == 0:
-                    q = quad_left(x, x + w, a + 0.2, z, z + 2.4)
-                else:
-                    q = quad_right(a + 0.2, -x - w, -x, z, z + 2.4)
-                out.append((hash32(t, len(out), 250), face, q))
-    out.sort()
-    return [(face, q) for _, face, q in out]
-
-
-def neon(s):
-    """A neon strip up the right face, by its right corner."""
-    a, _, h = stack(s)[0]
-    return quad_right(a + 0.2, -a + 1.4, -a + 3.2, 4, h - 4)
-
-
-def sign(t, s):
-    """A blade sign standing off the left face, and its lit panel."""
-    a, _, h = stack(s)[0]
-    x0 = a - 4.5
-    z0 = round(h * (0.3 + 0.25 * hash32(t, 0, 120) / 2 ** 32))
-    hs = min(h - z0 - 4, round(10 + 8 * hash32(t, 0, 121) / 2 ** 32))
-    blade = [proj(x0, a, z0 + hs), proj(x0 + 1.6, a, z0 + hs), proj(x0 + 1.6, a + 7, z0 + hs),
-             proj(x0 + 1.6, a + 7, z0), proj(x0, a + 7, z0), proj(x0, a + 7, z0 + hs)]
-    glow = [proj(x0 + 1.6 + 0.2, a + 1.2, z0 + hs - 1.6), proj(x0 + 1.6 + 0.2, a + 5.8, z0 + hs - 1.6),
-            proj(x0 + 1.6 + 0.2, a + 5.8, z0 + 1.6), proj(x0 + 1.6 + 0.2, a + 1.2, z0 + 1.6)]
-    return start_long(blade), glow
-
-
-def ellipse(cx, cy, rx, ry, n=12):
-    return [(cx + rx * math.cos(2 * math.pi * k / n), cy + ry * math.sin(2 * math.pi * k / n)) for k in range(n)]
-
-
-def seen(lot, pts):
-    """Whether an outline of a lot is ever on screen below the header, at any of its scales."""
-    cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
-    cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
-    return any(3 <= lot["x"] + s * cx <= 477 and 41 <= lot["y"] + s * cy <= 217 for s in (SMALLEST_SCALE, 1307 / 1024))
-
-
-def lot_nodes(lot, count):
-    t = lot["t"]
-    s = static(t)
-    n = [Node("body", building(s), ("#000000", EDGE[lot["row"]], 0.5))]
-    for k, (face, q) in enumerate(lot["wins"][:count]):
-        n.append(Node("win%d" % k, q, PALETTE[1 + face]))
-    if s["neon"]:
-        n.append(Node("neon", neon(s), PALETTE[5]))
-    if s["sign"]:
-        blade, glow = sign(t, s)
-        n.append(Node("blade", blade, BLADE))
-        n.append(Node("glow", glow, PALETTE[11]))
-    if s["mast"]:
-        mx, my = s["mast_top"]
-        mh = s["mh"]
-        n.append(Node("ring0", ellipse(mx, my + mh * 0.62, 7.4, 2.6), PALETTE[9], fill=False))
-        n.append(Node("ring1", ellipse(mx, my + mh * 0.34, 5.6, 2.0), PALETTE[9], fill=False))
-        n.append(Node("light", [(mx, my - 2.9), (mx + 1.5, my - 1.3), (mx, my + 0.3), (mx - 1.5, my - 1.3)], PALETTE[13]))
-    return s, n
-
-
-# ------------------------------------------------------------------ the car: an original wedge flyer, side on
-PROFILE = [[0, 3], [34, 2], [41, 3.5], [45, 6], [43.5, 8.5], [32, 10.5], [26, 11.5], [9, 12], [2.5, 11], [0, 8]]
-CANOPY = [[9, 11.8], [27, 11.4], [22.5, 17.5], [12, 18], [7.5, 15]]
-POD = [[1, 1.5], [19, 1.5], [21.5, 5.5], [18, 9.5], [4, 9.5], [0, 6]]
-
-
-def cproj(u, d, z):
-    """The car's own axes on screen: u along its length (screen x, the way it flies), d across
-    it toward the viewer, z up; the same isometric camera as the city's."""
-    return proj((u + d) / math.sqrt(2), (d - u) / math.sqrt(2), z)
-
-
-def hull(points):
-    pts = sorted(set((round(p[0], 3), round(p[1], 3)) for p in points))
-    def cr(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-    lower, upper = [], []
-    for p in pts:
-        while len(lower) >= 2 and cr(lower[-2], lower[-1], p) <= 0: lower.pop()
-        lower.append(p)
-    for p in reversed(pts):
-        while len(upper) >= 2 and cr(upper[-2], upper[-1], p) <= 0: upper.pop()
-        upper.append(p)
-    return lower[:-1] + upper[:-1]
-
-
-def extrusion(prof, x, d0, d1, sc):
-    return [cproj(x + u * sc, dd, w * sc) for u, w in prof for dd in (d0, d1)]
-
-
-def deck(prof, x, d0, d1, sc):
-    """The upward faces of the body, as one strip: along the top of the profile at d0, back at d1."""
-    ks = []
-    for k in range(len(prof)):
-        a, b = prof[k], prof[(k + 1) % len(prof)]
-        nx, nz = b[1] - a[1], -(b[0] - a[0])
-        if nx + nz > 0.01 and nz / math.hypot(nx, nz) > 0.55:
-            ks.append(k)
-    first, last = ks[0], ks[-1] + 1
-    idx = list(range(first, last + 1))
-    pts = [cproj(x + prof[k % len(prof)][0] * sc, d0, prof[k % len(prof)][1] * sc) for k in idx]
-    pts += [cproj(x + prof[k % len(prof)][0] * sc, d1, prof[k % len(prof)][1] * sc) for k in reversed(idx)]
-    return pts
-
-
-def car_nodes(sc, lead):
-    W = 11 * sc
-    x = -22 * sc                                      # the car's reference: mid-body on the ground line
-    n = []
-    if lead:
-        n.append(Node("farpod", hull(extrusion(POD, x + 3 * sc, -4 * sc, 0, sc)), ("#BEBEBE", "#000000", 0.5)))
-    n.append(Node("hull", hull(extrusion(PROFILE, x, 0, W, sc)), ("#C8C8C8", "#000000", 0.5)))
-    if lead:
-        n.append(Node("deck", deck(PROFILE, x, 0, W, sc), ("#F2F2F2", "#000000", 0.4)))
-    n.append(Node("side", [cproj(x + u * sc, W, w * sc) for u, w in PROFILE], ("#E2E2E2", "#000000", 0.5)))
-    n.append(Node("glass", hull(extrusion(CANOPY, x, 2 * sc, W - 2 * sc, sc)), ("#303030", "#F2F2F2", 0.7)))
-    if lead:
-        n.append(Node("lamp", [cproj(x + 13 * sc, 4 * sc, 18.6 * sc), cproj(x + 20 * sc, 4 * sc, 18.4 * sc),
-                               cproj(x + 20 * sc, W - 4 * sc, 18.4 * sc), cproj(x + 13 * sc, W - 4 * sc, 18.6 * sc)],
-                      ("#FFFFFF", "#000000", 0.5)))
-    n.append(Node("nearpod", hull(extrusion(POD, x + 3 * sc, W, W + 4 * sc, sc)), ("#D6D6D6", "#000000", 0.5)))
-    # every part of a car turns about one origin, its middle, so they move and bank as one
-    ox = round(sum(min(p[0] for p in q.points) + max(p[0] for p in q.points) for q in n) / (2 * len(n)))
-    oy = round(sum(min(p[1] for p in q.points) + max(p[1] for p in q.points) for q in n) / (2 * len(n)))
-    for q in n:
-        q.ox, q.oy = ox, oy
-        q.points = start_long(q.points)
-    return n
-
-
-# ------------------------------------------------------------------ the sky: traffic lanes and a searchlight
-# Each lane: its height on screen, the row it passes in front of (it's drawn after that row's
-# lots, so nearer towers hide it), its speed at full cruise (px a second, + rightward), its
-# cars' scale and how many.
-LANES = [dict(y=60, after=1, speed=-16, scale=0.75, cars=4),
-         dict(y=96, after=3, speed=27, scale=0.9, cars=3),
-         dict(y=148, after=5, speed=-42, scale=1.1, cars=3)]
-LANE_LENGTH = 500                                     # a lane's loop, px: the screen and 10 px each side
-LANE_LEFT = -10
-
-
-def tiny_car(k, scale):
-    """A small car: a level wedge, nose to the right."""
-    pts = [(-3.6, -1.0), (2.0, -1.0), (3.8, 0.1), (2.0, 1.0), (-3.6, 1.0)]
-    return [(x * scale, y * scale) for x, y in pts]
-
-
-BEAM_LENGTH = 62                                      # px at unit scale; drawn at scale 2
-BEAM_SCALE = 2048
-
-
-def beam_node():
-    return Node("beam", [(-0.6, 0), (0.6, 0), (4.6, -BEAM_LENGTH), (-4.6, -BEAM_LENGTH)], BEAM, fill=False, origin=(0, 0))
-
-
-# ------------------------------------------------------------------ checks (the device's drawing rules)
-def measures(node):
-    """An outline's measures, from its points as the artwork writes them (relative to its origin)."""
-    pts = [(float(num(p[0] - node.ox)), float(num(p[1] - node.oy))) for p in node.points]
-    gaps = [length(sub(pts[(k + 1) % len(pts)], pts[k])) for k in range(len(pts))]
-    turns = []
     for k in range(len(pts)):
         a, b, c = pts[k - 1], pts[k], pts[(k + 1) % len(pts)]
         u, v = sub(a, b), sub(c, b)
         cosine = (u[0] * v[0] + u[1] * v[1]) / (length(u) * length(v))
-        turns.append(math.degrees(math.acos(max(-1, min(1, cosine)))))
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    return dict(count=len(pts), gap=min(gaps), closing=gaps[-1], turn=min(turns), area=abs(area(pts)),
-                box=(min(xs), max(xs), min(ys), max(ys)), pts=pts)
-
-
-def check(node, where, smallest=1.0):
-    m = measures(node)
-    assert 3 <= m["count"] <= 64, f"{where}: {m['count']} points"
-    assert m["gap"] * smallest >= 0.125, f"{where}: points {m['gap'] * smallest:.3f} px apart at the smallest scale"
-    assert m["closing"] * smallest >= 0.25, f"{where}: closing edge {m['closing'] * smallest:.3f} px"
-    assert m["turn"] >= 2.5, f"{where}: a turn of {m['turn']:.2f} degrees"
-    assert m["area"] > 0.5, f"{where}: no area"
-    assert simple(m["pts"]), f"{where}: crosses itself"
-    x0, x1, y0, y1 = m["box"]
-    assert max(-x0, x1, -y0, y1) <= 63, f"{where}: a point past 63 px from its origin"
-
-
-# ------------------------------------------------------------------ the whole scene
-def scene():
-    """Every node, numbered: the header's bars 0..7, then each lot's, the traffic, the beam
-    and the cars. `order` is the artwork's drawing order, back to front."""
-    L = lots()
-    for lot in L:
-        s = static(lot["t"])
-        building(s)
-        lot["wins"] = [w for w in windows(lot["t"], s) if seen(lot, w[1])][:MOST_WINDOWS]
-    counts = window_counts(L)
-    nodes = []
-    rows = []
-    for lot in L:
-        s, ns = lot_nodes(lot, counts[lot["t"]])
-        rows.append(dict(lot, first=8 + len(nodes), s=s, roles=[q.role for q in ns],
-                         faces=[f for f, _ in lot["wins"][:counts[lot["t"]]]]))
-        nodes += ns
-    traffic = []
-    for li, lane in enumerate(LANES):
-        for c in range(lane["cars"]):
-            pts = tiny_car(c, lane["scale"])
-            if lane["speed"] < 0:
-                pts = [(-x, y) for x, y in reversed(pts)]
-            q = Node("car%d.%d" % (li, c), start_long(pts), (LANE_PAINT[li], LANE_PAINT[li], 0.3), origin=(0, 0))
-            traffic.append((li, c, 8 + len(nodes)))
-            nodes.append(q)
-    # the searchlight: on the tallest roof without a mast in the back two rows
-    cands = [r for r in rows if 4 <= r["row"] <= 5 and not r["s"]["mast"] and 120 <= r["x"] <= 360]
-    src = max(cands, key=lambda r: sum(h for _, h in r["s"]["boxes"]))
-    src["s"]["roof"] = (0, -sum(h for _, h in src["s"]["boxes"]))
-    beam_index = 8 + len(nodes)
-    nodes.append(beam_node())
-    lead, wing = car_nodes(1.2, True), car_nodes(0.78, False)
-    car_first = 8 + len(nodes)
-    nodes += lead + wing
-    # the drawing order
-    order = []
-    for r in rows:
-        order += list(range(r["first"], r["first"] + len(r["roles"])))
-        if r is src:
-            order.append(beam_index)
-        nxt = rows[rows.index(r) + 1] if r is not rows[-1] else None
-        for li, lane in enumerate(LANES):
-            if r["row"] == lane["after"] and (nxt is None or nxt["row"] != r["row"]):
-                order += [k for (l2, _, k) in traffic if l2 == li]
-    order += list(range(car_first, car_first + len(lead) + len(wing)))
-    assert sorted(order) == list(range(8, 8 + len(nodes)))
-    return dict(rows=rows, nodes=nodes, traffic=traffic, beam=beam_index, beam_lot=src, lead=lead, wing=wing,
-                car_first=car_first, order=order)
-
-
-def window_counts(L):
-    """How many of its windows each lot draws: taken a window from each lot in turn, until
-    the artwork's share for windows is spent."""
-    counts = {lot["t"]: 0 for lot in L}
-    spent = 0
-    for k in range(MOST_WINDOWS):
-        for lot in L:
-            if k < len(lot["wins"]):
-                q = lot["wins"][k][1]
-                cost = 86 + sum(len(num(p[0])) + len(num(p[1])) + 3 for p in q)
-                if spent + cost > WINDOW_BYTES:
-                    return counts
-                spent += cost
-                counts[lot["t"]] += 1
-    return counts
-
-
-def lot_fills(sc):
-    """Which bodies are filled: those that hide something drawn before them, at the
-    largest scale any lot can have."""
-    big = 1307 / 1024
-    rows, nodes = sc["rows"], sc["nodes"]
-    shapes = {}
-    for r in rows:
-        q = nodes[r["first"] - 8]
-        shapes[r["t"]] = [(r["x"] + big * p[0], r["y"] + big * p[1]) for p in q.points]
-    beam_reach = []
-    src = sc["beam_lot"]
-    bx, by = src["x"] + big * src["s"]["roof"][0], src["y"] + big * src["s"]["roof"][1]
-    for k in range(-6, 7):
-        a = math.radians(30 * k / 6)
-        beam_reach.append((bx + 124 * math.sin(a), by - 124 * math.cos(a)))
-    beam_poly = [(bx - 1, by), (bx + 1, by)] + list(reversed(beam_reach))
-    out = {}
-    for n, r in enumerate(rows):
-        hides = False
-        for before in rows[:n]:
-            if overlap(shapes[r["t"]], shapes[before["t"]]):
-                hides = True
-                break
-        for lane in LANES:
-            if lane["after"] < r["row"]:
-                band = [(-10, lane["y"] - 3), (490, lane["y"] - 3), (490, lane["y"] + 3), (-10, lane["y"] + 3)]
-                hides = hides or overlap(shapes[r["t"]], band)
-        if src["row"] < r["row"] or (src["row"] == r["row"] and src["t"] < r["t"]):
-            hides = hides or overlap(shapes[r["t"]], beam_poly)
-        out[r["t"]] = hides
+        out.append(math.degrees(math.acos(max(-1, min(1, cosine)))))
     return out
 
 
+def measures(pts):
+    gaps = [length(sub(pts[(k + 1) % len(pts)], pts[k])) for k in range(len(pts))]
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return dict(count=len(pts), gap=min(gaps), closing=gaps[-1], turn=min(turns(pts)), area=abs(area(pts)),
+                box=(min(xs), max(xs), min(ys), max(ys)))
+
+
+def check(pts, where, extent=None):
+    """The device's drawing rules (OP-XY-MNMD docs/SCREEN.md; the SDK's docs/display.md)."""
+    m = measures(pts)
+    assert 3 <= m["count"] <= 64, f"{where}: {m['count']} points"
+    assert m["gap"] >= 0.125, f"{where}: points {m['gap']:.3f} px apart"
+    assert m["closing"] >= 0.25, f"{where}: closing edge {m['closing']:.3f} px"
+    assert m["turn"] >= 2.5, f"{where}: a turn of {m['turn']:.2f} degrees"
+    assert m["area"] > 0.2, f"{where}: no area"
+    assert simple(pts), f"{where}: crosses itself"
+    if extent:
+        x0, x1, y0, y1 = m["box"]
+        assert max(-x0, x1, -y0, y1) <= extent, f"{where}: a point past {extent} px from its origin"
+    return m
+
+
+# ------------------------------------------------------------------ the scene's parts
+class Box:
+    """An axis-aligned box in the world, and maps onto its three seen faces."""
+
+    def __init__(self, x0, x1, y0, y1, z0, z1):
+        assert x0 < x1 and y0 < y1 and z0 < z1
+        self.x0, self.x1, self.y0, self.y1, self.z0, self.z1 = x0, x1, y0, y1, z0, z1
+
+    def faces(self):
+        x0, x1, y0, y1, z0, z1 = self.x0, self.x1, self.y0, self.y1, self.z0, self.z1
+        top = [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)]
+        left = [P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0), P(x0, y1, z0)]
+        right = [P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), P(x1, y0, z0)]
+        return top, left, right
+
+    # face coordinates: u across, w down from the top edge (v into the roof)
+    def L(self, u, w): return P(self.x0 + u, self.y1, self.z1 - w)
+    def R(self, u, w): return P(self.x1, self.y1 - u, self.z1 - w)
+    def T(self, u, v): return P(self.x0 + u, self.y0 + v, self.z1)
+    @property
+    def a(self): return self.x1 - self.x0
+    @property
+    def b(self): return self.y1 - self.y0
+    @property
+    def h(self): return self.z1 - self.z0
+
+
+def tower(fx, fy, a, b, y1, z0=0):
+    """A box from where its top front corner is on screen, its width along x (a) and y (b),
+    and the world y of its front face (which fixes its depth); it stands on the ground."""
+    a, b = 2 * round(a / 2), 2 * round(b / 2)          # even sizes and an even x + y keep corners on whole pixels
+    x1 = fx - OX + y1
+    x1 += (x1 + y1) % 2
+    z1 = (x1 + y1) // 2 + OY - fy
+    return Box(x1 - a, x1, y1 - b, y1, min(z0, z1 - 200), z1)
+
+
+class Item:
+    def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None):
+        self.kind, self.pts, self.tone, self.occ, self.width, self.node = kind, pts, tone, occ, width, node
+
+
+class Solid:
+    """Something with a place in the depth order: its box, and its parts, drawn in order."""
+
+    def __init__(self, name, box, items=None):
+        self.name, self.box, self.items = name, box, items or []
+
+    def fill(self, pts, tone, occ=None):
+        """A static filled outline. Unless told, it hides what is behind it when it is big and
+        solid enough that cutting it out of what is behind saves more fill than it costs."""
+        if occ is None:
+            a = abs(area(pts))
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            occ = a >= OCCLUDE and a >= 0.3 * (max(xs) - min(xs)) * (max(ys) - min(ys))
+        self.items.append(Item("fill", list(pts), tone, occ))
+
+    def line(self, pts, tone, width):
+        self.items.append(Item("line", list(pts), tone, width=width))
+
+    def node(self, pts, **spec):
+        self.items.append(Item("node", list(pts), node=spec))
+
+    def faces(self, shades, occ=True, sides=(True, True, True)):
+        self.faces_of(self.box, shades, occ, sides)
+
+    def faces_of(self, box, shades, occ=True, sides=(True, True, True)):
+        top, left, right = box.faces()
+        for want, pts, t in zip(sides, (top, left, right), shades):
+            if want:
+                self.fill(pts, t, occ)
+
+
+SOLIDS = []
+
+
+def solid(name, box):
+    s = Solid(name, box)
+    SOLIDS.append(s)
+    return s
+
+
+# ------------------------------------------------------------------ shapes in face coordinates
+def quad(f, u, w, du, dw):
+    return [f(u, w), f(u + du, w), f(u + du, w + dw), f(u, w + dw)]
+
+
+def column(f, u, w, du, dw, n, pitch, spine=0.5):
+    """n dashes stacked down a face, joined by a thin spine at their left: one outline."""
+    pts = []
+    for k in range(n):
+        wk = w + k * pitch
+        pts += [f(u if k == 0 else u + spine, wk), f(u + du, wk), f(u + du, wk + dw)]
+        pts.append(f(u + spine, wk + dw) if k < n - 1 else f(u, wk + dw))
+    return pts
+
+
+def row(f, u, w, du, dw, n, pitch, spine=0.5):
+    """n blocks side by side along a face, joined by a thin spine along their foot: one outline."""
+    pts = []
+    for k in range(n):
+        uk = u + k * pitch
+        pts += [f(uk, w + dw if k == 0 else w + dw - spine), f(uk, w), f(uk + du, w)]
+        pts.append(f(uk + du, w + dw - spine) if k < n - 1 else f(uk + du, w + dw))
+    return pts
+
+
+def ellipse(cx, cy, rx, ry, n=12, phase=0.0):
+    return [(cx + rx * math.cos(2 * math.pi * (k + phase) / n), cy + ry * math.sin(2 * math.pi * (k + phase) / n))
+            for k in range(n)]
+
+
+def disc(f, cu, cv, r, n=12):
+    """A circle lying in a face's plane (u, v), as its outline on screen."""
+    return [f(cu + r * math.cos(2 * math.pi * k / n), cv + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
+
+
+def ring_outline(f, cu, cv, r0, r1, n=12, slit=0.35):
+    """An annulus in a face's plane as one outline: a slit joins its hole to the outside."""
+    outer = [(cu + r1 * math.cos(2 * math.pi * (k + 0.5) / n), cv + r1 * math.sin(2 * math.pi * (k + 0.5) / n)) for k in range(n)]
+    inner = [(cu + r0 * math.cos(2 * math.pi * (k + 0.5) / n), cv + r0 * math.sin(2 * math.pi * (k + 0.5) / n)) for k in range(n)]
+    ring = Polygon(outer).difference(Polygon(inner))
+    cut = rect(cu - slit / 2, cv, cu + slit / 2, cv + r1 + 1)
+    shape = ring.difference(cut)
+    pts = list(shape.exterior.coords)[:-1]
+    return [f(u, v) for u, v in pts]
+
+
+def strokes(lines, width):
+    """A glyph from its strokes (face units), as one outline; a hole gets a slit at its foot."""
+    from shapely.geometry import LineString
+    g = shapely.union_all([LineString(l).buffer(width / 2, cap_style="square", join_style="mitre") for l in lines])
+    g = shapely.set_precision(g, 0.05)
+    for hole in list(g.interiors):
+        hx = (min(p[0] for p in hole.coords) + max(p[0] for p in hole.coords)) / 2
+        hy = max(p[1] for p in hole.coords)
+        g = g.difference(rect(hx - 0.2, hy - 0.5, hx + 0.2, hy + width + 1))
+    g = shapely.simplify(g, 0.01)
+    return [(round(u, 2), round(v, 2)) for u, v in list(g.exterior.coords)[:-1]]
+
+
+GLYPHS = {   # 6 wide, 9 tall, strokes 1.6 wide (face units)
+    "O": [[(0.8, 0.8), (5.2, 0.8), (5.2, 8.2), (0.8, 8.2), (0.8, 0.8)]],
+    "P": [[(0.8, 9), (0.8, 0.8), (5.2, 0.8), (5.2, 4.6), (0.8, 4.6)]],
+    "-": [[(0, 5), (4, 5)]],
+    "X": [[(0.8, 0.8), (5.2, 8.2)], [(5.2, 0.8), (0.8, 8.2)]],
+    "Y": [[(0.8, 0.8), (3, 4.6)], [(5.2, 0.8), (3, 4.6)], [(3, 4.6), (3, 8.2)]],
+}
+GLYPH_WIDTH = {"O": 6, "P": 6, "-": 4, "X": 6, "Y": 6}
+
+
+# ------------------------------------------------------------------ the city
+def comb_down(f, u, w, du, dw, n, pitch, spine=0.6):
+    """n bars side by side, hanging from a thin spine along their tops: one outline."""
+    pts = []
+    for k in range(n):
+        uk = u + k * pitch
+        pts += [f(uk, w if k == 0 else w + spine), f(uk, w + dw), f(uk + du, w + dw)]
+        pts.append(f(uk + du, w + spine) if k < n - 1 else f(uk + du, w))
+    return pts
+
+
+class City:
+    """The scene's builder: solids, and the nodes on them."""
+
+    def __init__(self):
+        SOLIDS.clear()
+        self.masts, self.lights, self.fans, self.rings = [], [], [], []
+
+    # windows: each column (or run) a lit strip, a node of 4 points; the face's own grey is laid
+    # over the gaps between rows, so one strip shows as a column of windows
+    def grid(self, s, f, u0, w0, cols, rows, du, dw, pu, pw, face, lit, seed):
+        for c in range(cols):
+            u = u0 + c * pu
+            strip = quad(f, u + 0.25, w0 + 0.25, du - 0.5, (rows - 1) * pw + dw - 0.5)
+            s.node(strip, kind="window", low=max(face - 1, 1), high=lit, param=(seed * 61 + c * 29 + 7) % 256, tone=lit)
+        if rows > 1:
+            width = (cols - 1) * pu + du
+            s.fill(column(f, u0 - 1.4, w0 + dw, width + 1.9, pw - dw, rows - 1, pw, spine=0.7), face, occ=False)
+
+    def band(self, s, f, u0, w0, n, du, dw, pu, face, lit, seed, per=4):
+        """A row of windows across a face, lit a run of `per` at a time."""
+        k = 0
+        while k < n:
+            m = min(per, n - k)
+            u = u0 + k * pu
+            s.node(quad(f, u + 0.25, w0 + 0.25, (m - 1) * pu + du - 0.5, dw - 0.5), kind="window",
+                   low=max(face - 1, 1), high=lit, param=(seed * 61 + k * 29 + 7) % 256, tone=lit)
+            k += m
+        s.fill(comb_down(f, u0 + du, w0 - 1.4, pu - du, dw + 1.9, n - 1, pu, spine=0.7), face, occ=False)
+
+    def building(self, name, fx, fy, a, b, y1, shades=MID, parapet=2, inner=None):
+        bx = tower(fx, fy, a, b, y1)
+        s = solid(name, bx)
+        s.faces(shades)
+        if parapet:
+            p = parapet
+            s.fill([bx.T(p, p), bx.T(bx.a - p, p), bx.T(bx.a - p, bx.b - p), bx.T(p, bx.b - p)],
+                   inner if inner is not None else shades[0] - 3)
+        return s, bx
+
+    def box_on(self, name, base, u, v, a, b, h, shades=(9, 6, 3), lid=None):
+        """A box standing on another's roof (vents, plant rooms)."""
+        bx = Box(base.x0 + u, base.x0 + u + a, base.y0 + v, base.y0 + v + b, base.z1, base.z1 + h)
+        s = solid(name, bx)
+        s.faces(shades)
+        if lid is not None:
+            s.fill([bx.T(1, 1), bx.T(a - 1, 1), bx.T(a - 1, b - 1), bx.T(1, b - 1)], lid)
+        return s, bx
+
+    def mast(self, owner, x, y, h, rings=True, width=1.2, tone=2, phase=0):
+        owner.fill([(x - width, y + 0.5), (x - 0.4, y - h), (x + 0.4, y - h), (x + width, y + 0.5)], tone)
+        owner.fill([(x - width - 0.8, y - h * 0.4), (x + width + 0.8, y - h * 0.4),
+                    (x + width + 0.8, y - h * 0.4 + 1.2), (x - width - 0.8, y - h * 0.4 + 1.2)], tone)
+        self.lights.append((owner, x, y - h - 0.6, 1.3, phase))
+        if rings:
+            self.rings.append((owner, ellipse(x, y - h * 0.62, 5.5, 1.8, 12, 0.5), 0))
+            self.rings.append((owner, ellipse(x, y - h * 0.82, 4.0, 1.4, 12, 0.5), 1))
+
+    def fan(self, owner, bx, cu, cv, r):
+        owner.fill(disc(bx.T, cu, cv, r + 1.4, 16), 9)
+        owner.fill(disc(bx.T, cu, cv, r + 0.4, 16), 1)
+        k = len(self.fans)
+        for f in range(3):
+            pts = []
+            for blade in range(3):
+                a0 = 2 * math.pi * blade / 3 + f * 2 * math.pi / 9
+                pts.append(bx.T(cu + 1.3 * math.cos(a0 - 1.1), cv + 1.3 * math.sin(a0 - 1.1)))
+                pts.append(bx.T(cu + (r - 0.6) * math.cos(a0 - 0.34), cv + (r - 0.6) * math.sin(a0 - 0.34)))
+                pts.append(bx.T(cu + (r - 0.6) * math.cos(a0 + 0.34), cv + (r - 0.6) * math.sin(a0 + 0.34)))
+            owner.node(pts, kind="fan", param=k * 3 + f, tone=8, keep=True)
+        owner.fill(disc(bx.T, cu, cv, 1.3, 8), 10)
+        self.fans.append(k)
+
+
+def city():
+    """Every solid of the scene; order() sorts them back to front."""
+    C = City()
+    g = C.grid
+
+    # --- the sky, clouds and the haze far behind
+    sky = solid("sky", Box(-3000, -2990, -3000, -2990, 0, 1))
+    sky.fill([(0, TOP), (480, TOP), (480, BOTTOM), (0, BOTTOM)], SKY, occ=True)
+    for k, pts in enumerate([ellipse(360, 58, 34, 30, 16), ellipse(318, 46, 20, 12, 12), ellipse(398, 44, 22, 14, 12),
+                             ellipse(30, 44, 26, 9, 12), ellipse(150, 42, 18, 7, 12)]):
+        c = solid(f"cloud{k}", Box(-2900 + 2 * k, -2899 + 2 * k, -2900, -2899, 0, 1))
+        c.fill(pts, 13, occ=True)
+    glows = []
+    haze = [  # (fx, fy, a, b, spire)
+        (16, 76, 18, 12, 0), (52, 56, 12, 10, 0), (126, 56, 12, 10, 1), (152, 70, 14, 10, 0), (260, 46, 18, 16, 0),
+        (300, 62, 12, 10, 0), (334, 86, 16, 12, 0), (392, 84, 14, 12, 1), (474, 56, 16, 12, 0), (238, 98, 14, 10, 0),
+        (96, 98, 12, 10, 0), (430, 104, 12, 10, 0),
+    ]
+    for k, (fx, fy, a, b, spire) in enumerate(haze):
+        bx = tower(fx, fy, a, b, -1200 + k * 12)
+        h = solid(f"haze{k}", bx)
+        h.faces(HAZE)
+        if spire:
+            for step in range(2):
+                sb = Box(bx.x0 + 2 + 2 * step, bx.x1 - 2 - 2 * step, bx.y0 + 2 + 2 * step, bx.y1 - 2 - 2 * step,
+                         bx.z1 + 6 * step, bx.z1 + 6 * step + 6)
+                h.faces_of(sb, HAZE)
+            mx, my = bx.T(a / 2, b / 2)
+            h.fill([(mx - 1.2, my - 11), (mx - 0.3, my - 26), (mx + 0.3, my - 26), (mx + 1.2, my - 11)], 11)
+        for r in range(3):
+            h.fill(quad(bx.L, 2, 7 + r * 8, a - 4, 1.4), 12)
+        if k % 2:
+            glows.append((h, quad(bx.L, 3 + (k * 5) % max(1, int(a) - 6), 11 + (k % 3) * 8, 1.6, 1.6), k))
+        else:
+            glows.append((h, quad(bx.R, 2 + (k * 3) % max(1, int(b) - 5), 9 + ((k + 1) % 3) * 9, 1.6, 1.6), k + 40))
+    for h, pts, seed in glows:
+        h.node(pts, kind="glow", low=11, high=14, param=(seed * 97 + 13) % 256, tone=14)
+
+    # --- behind the track
+    # B: the tall dark tower left of centre, with a plant room on its roof and lit strips
+    s, bx = C.building("B", 88, 50, 29, 16, -60, (9, 6, 3))
+    C.box_on("B0", bx, 6, 3, 14, 10, 8, lid=5)
+    s.node(quad(bx.L, 7.25, 14, 2, 46), kind="window", low=4, high=14, param=40, tone=14)
+    s.node(quad(bx.R, 6.25, 12, 2, 40), kind="window", low=2, high=13, param=170, tone=13)
+    s.fill(quad(bx.L, 18, 8, 1, 70), 8)
+    # haze-side: C, a lower tower with a dark latticed roof
+    s, bx = C.building("C", 130, 70, 17, 13, -30, MID, inner=4)
+    for k in range(3):
+        s.fill([bx.T(3 + k * 4, 3), bx.T(4 + k * 4, 3), bx.T(4 + k * 4, 10), bx.T(3 + k * 4, 10)], 7)
+    g(s, bx.L, 3, 8, 3, 5, 2.4, 2, 5, 5, 7, 14, 320)
+    # Ls: a light face behind the track, under it
+    s, bx = C.building("Ls", 106, 122, 20, 12, -12, (11, 10, 6), parapet=0)
+    s.fill(quad(bx.L, 3, 6, 1.2, 80), 9)
+    # D: the big tower behind the advert, rows of lit dashes
+    s, bx = C.building("D", 188, 40, 36, 22, -90, (9, 7, 3), parapet=0)
+    s.fill(quad(bx.L, 0, 0, bx.a, 1.6), 12)
+    g(s, bx.L, 5, 8, 3, 11, 5, 1.8, 10.5, 5.5, 7, 14, 340)
+    # U: a dark block under the track, in front of D's foot
+    s, bx = C.building("U", 192, 158, 30, 14, -14, (8, 5, 2), parapet=0)
+    g(s, bx.L, 3, 6, 4, 6, 2.5, 2.4, 7, 6, 5, 14, 360)
+    # E: a dark tower beyond the advert tower
+    s, bx = C.building("E", 312, 46, 24, 22, -150, (9, 6, 3))
+    g(s, bx.L, 3, 7, 4, 5, 2.4, 2.4, 5.5, 5.5, 6, 14, 420)
+    g(s, bx.R, 3, 7, 3, 5, 2.4, 2.4, 6, 5.5, 3, 13, 440)
+
+    # The advert tower: OP-XY, a pattern and a dash on its left face; bands and windows on its right
+    tw = tower(240, 72, 47, 43, -4)
+    t = solid("advert", tw)
+    t.faces((8, 6, 3))
+    t.fill([tw.T(2, 2), tw.T(45, 2), tw.T(45, 41), tw.T(2, 41)], 5)
+    C.box_on("adv0", tw, 10, 8, 16, 14, 6, lid=4)
+    C.box_on("adv1", tw, 30, 24, 9, 10, 4)
+    t.fill(quad(tw.L, 2.5, 4, 42, 84), 5, occ=True)                     # the advert's screen
+    for k in range(3):
+        t.fill(quad(tw.R, 0, 8 + k * 7, 43, 3), 4)
+        t.fill(quad(tw.R, 0, 11 + k * 7, 43, 1), 7)
+    g(t, tw.R, 8, 34, 3, 8, 3, 3, 7, 6, 3, 13, 500)
+    u = 6.5
+    for ch in "OP-XY":
+        pts = [tw.L(u + p[0], 10 + p[1]) for p in strokes(GLYPHS[ch], 1.6)]
+        t.node(pts, kind="glyph", low=8, high=14, tone=13)
+        u += GLYPH_WIDTH[ch] + 1.4
+    for u0, w0, du in [(8, 72, 18), (8, 76.5, 11)]:
+        t.node(quad(tw.L, u0, w0, du, 1.8), kind="glyph", low=8, high=14, tone=13)
+    # the patterns, one shown: sine as circles, saw as ramps, square as a checker, pulse as thin bars
+    cu, cw = 23, 46
+    t.node(disc(tw.L, cu, cw, 6, 14), kind="pattern", param=0, low=8, high=14, tone=13)
+    t.node(ring_outline(tw.L, cu, cw, 9.5, 12, 16), kind="pattern", param=0, low=8, high=14, tone=13)
+    saw = []
+    for k in range(3):
+        u0 = 9 + k * 9.6
+        saw += [tw.L(u0 + (0.4 if k else 0), 64 if k == 0 else 63), tw.L(u0 + 9.2, 30)]
+        saw += [tw.L(u0 + 9.2, 63)] if k < 2 else [tw.L(u0 + 9.2, 64)]
+    t.node(saw, kind="pattern", param=1, low=8, high=14, tone=13)
+    for r in range(5):
+        for c in range(4):
+            if (r + c) % 2 == 0:
+                t.node(quad(tw.L, 9 + c * 7.2, 29 + r * 7, 6.4, 6.2), kind="pattern", param=2, low=8, high=14, tone=13)
+    t.node(row(tw.L, 9.5, 29, 1.5, 35, 6, 5.2), kind="pattern", param=3, low=8, high=14, tone=13)
+    t.node([tw.L(46.3, 3), tw.L(47, 3), tw.L(47, 98), tw.L(46.3, 98)], kind="neon", low=5, high=15, tone=12)
+    for k, (uu, vv, hh) in enumerate([(8, 6, 44), (36, 4, 50), (40, 30, 36)]):
+        C.mast(t, *tw.T(uu, vv), hh, rings=k != 1, phase=k * 80)
+
+    # small blocks right of the advert tower
+    s, bx = C.building("F", 302, 100, 22, 26, -110, FAR)
+    C.box_on("F0", bx, 3, 4, 8, 7, 6, lid=6)
+    C.box_on("F1", bx, 13, 12, 7, 9, 4)
+    C.box_on("F2", bx, 3, 15, 7, 7, 9, lid=6)
+    s, bx = C.building("V", 300, 150, 22, 14, -24, MID)
+    g(s, bx.L, 3, 6, 3, 4, 3, 2.4, 6.5, 6, 7, 14, 380)
+    C.box_on("V0", bx, 4, 3, 7, 6, 5)
+
+    # The ball tower: a lattice stem, a ball with a band, a spire
+    bb = tower(364, 108, 16, 12, -150)
+    s = solid("ballbase", bb)
+    s.faces(FAR)
+    sx_, sy_ = bb.T(8, 6)
+    ball = solid("ball", Box(bb.x0 + 6, bb.x0 + 10, bb.y0 + 4, bb.y0 + 8, bb.z1, bb.z1 + 50))
+    ball.fill([(sx_ - 3, sy_ + 1), (sx_ - 2, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 1)], 4)
+    ball.fill([(sx_ + 0.6, sy_ + 0.5), (sx_ + 0.6, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 0.5)], 2)
+    for k in range(4):
+        ball.fill([(sx_ - 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 5 - 7 * k),
+                   (sx_ - 2.6, sy_ - 5 - 7 * k)], 6)
+    bcx, bcy = sx_, sy_ - 42
+    ball.fill(ellipse(bcx, bcy, 8, 8, 16), 4)
+    ball.fill(ellipse(bcx - 2, bcy - 2.2, 4.6, 4.6, 12), 7)
+    ball.fill(ellipse(bcx - 3, bcy - 3.4, 1.6, 1.6, 8), 10)
+    ball.fill([(bcx - 8, bcy - 0.5), (bcx + 8, bcy - 0.5), (bcx + 8, bcy + 0.7), (bcx - 8, bcy + 0.7)], 2)
+    C.mast(ball, bcx, bcy - 7.6, 20, rings=False, width=1.0, tone=3, phase=150)
+    C.rings.append((ball, ellipse(bcx, bcy, 12, 3.6, 14, 0.5), 0))
+    C.rings.append((ball, ellipse(bcx, bcy, 15.5, 4.6, 16, 0.5), 1))
+
+    # The helipad: a wide block; its pad, the H in a circle, corner lights; the craft
+    hp = tower(352, 140, 47, 46, -80)
+    s = solid("helipad", hp)
+    s.faces((9, 7, 4))
+    s.fill([hp.T(4, 4), hp.T(43, 4), hp.T(43, 42), hp.T(4, 42)], 6)
+    s.line([hp.T(7, 7), hp.T(40, 7), hp.T(40, 39), hp.T(7, 39)], 11, 0.5)
+    s.line(disc(hp.T, 23.5, 23, 10, 18), 11, 0.6)
+    H = [(-3.6, -3), (-2.4, -3), (-2.4, -0.6), (2.4, -0.6), (2.4, -3), (3.6, -3), (3.6, 3), (2.4, 3), (2.4, 0.6),
+         (-2.4, 0.6), (-2.4, 3), (-3.6, 3)]
+    s.fill([hp.T(23.5 + du, 23 + dv) for du, dv in H], 11)
+    for uu, vv in [(7, 7), (40, 7), (40, 39), (7, 39)]:
+        s.fill([hp.T(uu - 1.5, vv - 0.4), hp.T(uu + 1.5, vv - 0.4), hp.T(uu + 1.5, vv + 0.4), hp.T(uu - 1.5, vv + 0.4)], 11)
+    for k, (uu, vv) in enumerate([(4, 4), (43, 4), (43, 42), (4, 42)]):
+        C.lights.append((s, *hp.T(uu, vv), 1.1, 40 + k * 64))
+    s.fill(quad(hp.L, 0, 3, 47, 1.2), 10)
+    g(s, hp.L, 4, 8, 6, 6, 3.5, 2.4, 7, 6, 7, 14, 600)
+    g(s, hp.R, 4, 8, 5, 6, 3, 2.4, 8.5, 6, 4, 13, 640)
+    hcx, hcy = hp.T(23.5, 23)
+
+    # The hourglass tower: a dot-matrix billboard on its left face, windows on its right
+    hg = tower(437, 68, 40, 18, -60)
+    s = solid("hourglass", hg)
+    s.faces((9, 6, 2))
+    s.fill([hg.T(2, 2), hg.T(38, 2), hg.T(38, 16), hg.T(2, 16)], 5)
+    C.box_on("hg0", hg, 6, 4, 10, 8, 6, lid=6)
+    C.box_on("hg1", hg, 22, 6, 8, 7, 4)
+    s.fill(quad(hg.L, 3, 7, 34, 78), 4, occ=True)                       # the billboard's frame
+    s.node(quad(hg.L, 4.25, 8.25, 31.5, 75.5), kind="panel", low=10, high=14, tone=13, occ=True)
+    s.node([hg.L(9, 17), hg.L(32, 17), hg.L(20.5, 45)], kind="sand", param=0, tone=6, keep=True,
+           sweep=[(0, 0), (0, -SAND_DRIFT)])
+    s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=6, keep=True,
+           sweep=[(0, 0), (0, SAND_DRIFT)])
+    # the dot matrix: the panel's grey laid over the gaps between dots, rows and columns
+    s.node(column(hg.L, 5.5, 10.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
+    s.node(column(hg.L, 5.5, 46.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
+    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, 75, 9, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
+    g(s, hg.R, 4, 8, 2, 12, 4, 1.8, 7, 6, 2, 13, 700)
+    s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
+    # far right: a tall tower with a grid of windows
+    s, bx = C.building("R2", 474, 40, 18, 22, -200, (9, 7, 3), parapet=0)
+    g(s, bx.L, 2.5, 6, 3, 9, 2.4, 2.4, 5, 5, 7, 14, 760)
+    g(s, bx.R, 2.5, 6, 4, 9, 2.4, 2.4, 5, 5, 3, 13, 780)
+    # N: a tower in front of the helipad's foot, lit windows
+    s, bx = C.building("N", 338, 140, 24, 14, -16, MID)
+    g(s, bx.L, 3, 6, 4, 6, 3, 2.4, 5.5, 6, 7, 14, 800)
+    g(s, bx.R, 3, 6, 2, 6, 3, 2.4, 6, 6, 4, 13, 830)
+    # M: a dark tower behind the second track
+    s, bx = C.building("M", 402, 130, 22, 16, -84, NEAR)
+    g(s, bx.L, 3, 6, 3, 7, 3, 2.4, 6.5, 6, 6, 14, 860)
+    g(s, bx.R, 3, 6, 2, 7, 3, 2.4, 6.5, 6, 3, 13, 880)
+
+    # --- the second track: a double viaduct, lower right, running up-right behind the main one
+    tr2 = Box(214, 232, -300, -16, 33, 39)
+    s = solid("track2", tr2)
+    top2, left2, right2 = tr2.faces()
+    s.fill(top2, 4, occ=True)
+    s.fill(right2, 2, occ=True)
+    s.fill(left2, 3, occ=True)
+    for v in (2.5, 6.5, 11, 15):
+        s.fill([P(214 + v, -300, 39), P(214 + v + 0.8, -300, 39), P(214 + v + 0.8, -16, 39), P(214 + v, -16, 39)], 8)
+    s.fill([P(232, -300, 36.6), P(232, -16, 36.6), P(232, -16, 35.6), P(232, -300, 35.6)], 5)
+    for k, yy in enumerate((-80, -160, -240)):
+        p = solid(f"pier2{k}", Box(216, 230, yy - 4, yy + 4, 0, 33))
+        p.faces((7, 5, 2), sides=(False, True, True))
+
+    # --- the main track: deck, rails and piers, along x
+    beam = solid("beam", Box(-160, 300, 3, 9, 54, 62))
+    beam.faces((3, 2, 2), sides=(False, True, False))
+    deck = Box(-160, 300, 0, 12, 62, 70)
+    s = solid("track", deck)
+    top, left, right = deck.faces()
+    s.fill(top, 3, occ=True)
+    s.fill(left, 5, occ=True)
+    for v, t_ in ((2, 8), (9, 8), (5.5, 2)):
+        s.fill([P(-160, v, 70), P(300, v, 70), P(300, v + 1, 70), P(-160, v + 1, 70)], t_)
+    s.fill([P(-160, 12, 70), P(300, 12, 70), P(300, 12, 69), P(-160, 12, 69)], 9)
+    s.fill([P(-160, 12, 64), P(300, 12, 64), P(300, 12, 62), P(-160, 12, 62)], 3)
+    for k, x in enumerate((-80, 0, 80, 160, 240)):
+        p = solid(f"pier{k}", Box(x, x + 8, 4, 8, 0, 54))
+        p.faces((7, 5, 2), sides=(False, True, True))
+    # the train: two cars on the deck, nodes, drawn between the track and what is in front of it
+    train = solid("train", Box(-160, 300, 1, 11, 70, 84))
+    car_len, gap = 46, 3
+    lead_x1 = 142                                   # home: the lead car's front, world x
+    for car in (0, 1):
+        x1 = lead_x1 - car * (car_len + gap)
+        cb = Box(x1 - car_len, x1, 2, 10, 70.5, 83)
+        top_, left_, right_ = cb.faces()
+        parts = [("roof", top_, 14), ("side", left_, 10), ("end", right_, 6),
+                 ("band", quad(cb.L, 3, 2.6, car_len - 6, 3.6), 3),
+                 ("skirt", quad(cb.L, 0, 9.8, car_len, 2.7), 4)]
+        if car == 0:
+            parts += [("screen", quad(cb.R, 0.8, 1.6, 5.4, 4.6), 2), ("lamp", quad(cb.R, 1.2, 8.4, 1.8, 1.2), 15)]
+        for k in range(3):
+            parts.append((f"door{k}", quad(cb.L, 9 + k * 14, 2.2, 1.6, 7), 8))
+        for role, pts, tone in parts:
+            train.node(pts, kind="train", role=f"car{car}.{role}", tone=tone, keep=True,
+                       sweep=[(-TRAIN_REACH, -TRAIN_REACH / 2), (TRAIN_REACH, TRAIN_REACH / 2)])
+
+    # --- in front of the track
+    # A: the tall tower at the left: a slatted roof, slats down its face, an antenna
+    s, bx = C.building("A", 44, 84, 52, 18, 50, (8, 6, 3), inner=4)
+    for k in range(4):
+        s.fill([bx.T(8, 4 + k * 3), bx.T(44, 4 + k * 3), bx.T(44, 5.2 + k * 3), bx.T(8, 5.2 + k * 3)], 2)
+    s.fill(column(bx.L, 8, 10, 12, 1.6, 12, 4.5, spine=1), 2, occ=False)
+    g(s, bx.R, 3, 8, 2, 8, 2.4, 2.4, 7, 6, 3, 13, 900)
+    C.mast(s, *bx.T(10, 9), 40, phase=20)
+    # S: the sun billboard's block
+    sb = tower(74, 112, 38, 12, 66)
+    s = solid("sun", sb)
+    s.faces((9, 6, 3))
+    s.fill([sb.T(2, 2), sb.T(36, 2), sb.T(36, 10), sb.T(2, 10)], 6)
+    s.fill(quad(sb.L, 2.5, 4, 33, 72), 4, occ=True)
+    s.node(quad(sb.L, 3.75, 5.25, 30.5, 69.5), kind="panel", low=10, high=14, tone=13, occ=True)
+    sun = [sb.L(19 + 9.5 * math.cos(math.pi * k / 10), 32 - 9.5 * math.sin(math.pi * k / 10)) for k in range(11)]
+    s.fill(sun, 8)
+    for k in range(4):
+        s.fill(quad(sb.L, 9.5 - k * 0.6, 34.5 + k * 4.2, 19 + k * 1.2, 2.6 - k * 0.3), 8)
+    s.node([sb.L(37.3, 3), sb.L(38, 3), sb.L(38, 76), sb.L(37.3, 76)], kind="neon", low=4, high=15, tone=12)
+    C.lights.append((s, *sb.T(1, 11), 1.0, 90))
+    # L: the low block at the bottom left: fans on its roof, a lit band on its face
+    lb = tower(40, 190, 45, 20, 92)
+    s = solid("fans", lb)
+    s.faces((8, 6, 3))
+    s.fill([lb.T(2, 2), lb.T(43, 2), lb.T(43, 18), lb.T(2, 18)], 5)
+    s.fill(quad(lb.L, 0, 6, 45, 6.5), 3)
+    C.band(s, lb.L, 2, 7, 9, 3.4, 4.5, 4.8, 3, 14, 940)
+    C.fan(s, lb, 14, 10, 6.5)
+    C.box_on("L0", lb, 30, 6, 9, 8, 6, lid=5)
+    # Dd: the long low block with the dish and a mast
+    dd = tower(150, 230, 96, 30, 132)
+    s = solid("dish", dd)
+    s.faces((8, 6, 3))
+    s.fill([dd.T(2, 2), dd.T(94, 2), dd.T(94, 28), dd.T(2, 28)], 6)
+    for k, (u0, v0, a0, b0, h0) in enumerate([(40, 6, 12, 10, 8), (60, 14, 9, 8, 6), (76, 4, 12, 12, 9)]):
+        C.box_on(f"Dd{k}", dd, u0, v0, a0, b0, h0, lid=4 + k % 2)
+    s.fill([dd.T(8, 16), dd.T(20, 16), dd.T(20, 26), dd.T(8, 26)], 2)
+    s.fill([dd.T(10, 18), dd.T(18, 18), dd.T(18, 24), dd.T(10, 24)], 4)
+    dx, dy = dd.T(28, 10)
+    C.mast(s, *dd.T(68, 6), 56, phase=200)
+    # Bc: the block at the bottom centre: a plant room with vents
+    bc = tower(292, 236, 80, 30, 132)
+    s = solid("Bc", bc)
+    s.faces((8, 6, 3))
+    s.fill([bc.T(2, 2), bc.T(78, 2), bc.T(78, 28), bc.T(2, 28)], 6)
+    r, rb = C.box_on("Bc0", bc, 34, 6, 18, 14, 11, lid=5)
+    for k in range(3):
+        r.fill(quad(rb.L, 2 + k * 5.5, 3, 3, 5), 2)
+    for k in range(3):
+        s.fill([bc.T(8 + k * 7, 18), bc.T(13 + k * 7, 18), bc.T(13 + k * 7, 25), bc.T(8 + k * 7, 25)], 2)
+    # Rf: the block at the right: a wide base with lit floors, a box above with fans and marks
+    rf = tower(462, 196, 54, 30, -12)
+    s = solid("Rf", rf)
+    s.faces((8, 5, 2))
+    s.fill(quad(rf.L, 0, 0, rf.a, 2), 9)
+    C.band(s, rf.L, 4, 8, 6, 5.5, 4, 7.5, 5, 14, 980, per=3)
+    C.band(s, rf.L, 4, 16, 6, 5.5, 4, 7.5, 5, 14, 990, per=3)
+    s2, ru = C.box_on("Rfu", rf, 6, 4, 44, 24, 26, shades=(10, 8, 4))
+    s2.fill([ru.T(2, 2), ru.T(42, 2), ru.T(42, 22), ru.T(2, 22)], 6)
+    for k in range(3):
+        s2.fill(quad(ru.L, 9 + k * 10, 8, 2.4, 8), 2)
+        s2.fill(quad(ru.L, 11.4 + k * 10, 13.6, 2.4, 2.4), 2)
+    s2.fill(quad(ru.L, 0, 21, 44, 1.6), 5)
+    C.fan(s2, ru, 13, 12, 7)
+    C.fan(s2, ru, 30, 12, 7)
+    C.lights.append((s2, *ru.T(43, 1), 1.0, 230))
+
+    # masts, rings and lights; the dish; the craft
+    for owner, pts, param in C.rings:
+        owner.node(pts, kind="ring", param=param, low=7, high=14, tone=11, outline=True)
+    for owner, x, y, rr, phase in C.lights:
+        owner.node([(x, y - rr), (x + rr, y), (x, y + rr), (x - rr, y)], kind="light", low=4, high=15,
+                   param=phase % 256, tone=15)
+    owner = solid("dishitself", Box(dd.x0 + 24, dd.x0 + 32, dd.y0 + 6, dd.y0 + 14, dd.z1, dd.z1 + 16))
+    owner.fill([(dx - 1.5, dy + 1), (dx - 0.8, dy - 7), (dx + 0.8, dy - 7), (dx + 1.5, dy + 1)], 3)
+    owner.fill([(dx - 4, dy + 1.5), (dx + 4, dy + 1.5), (dx + 4, dy - 0.5), (dx - 4, dy - 0.5)], 4)
+    tilt = 0.5
+    dpts = [(dx + 8 * math.cos(a) * math.cos(tilt) - 6 * math.sin(a) * math.sin(tilt),
+             dy - 11 + 8 * math.cos(a) * math.sin(tilt) + 6 * math.sin(a) * math.cos(tilt))
+            for a in [2 * math.pi * k / 16 for k in range(16)]]
+    owner.node(dpts, kind="dish", role="disc", tone=12, keep=True, pivot=(round(dx), round(dy - 11)), spread=2)
+    owner.node([(dx - 0.5, dy - 11), (dx + 4.5, dy - 16.5), (dx + 5.5, dy - 16), (dx + 0.5, dy - 10.4)],
+               kind="dish", role="feed", tone=4, keep=True, pivot=(round(dx), round(dy - 11)), spread=2)
+    owner.node(ellipse(dx, dy - 11, 4.4, 3.4, 12, 0.5), kind="ring", param=0, low=6, high=10, tone=8, outline=True)
+    owner.node(ellipse(dx, dy - 11, 1.6, 1.3, 8, 0.5), kind="ring", param=1, low=6, high=10, tone=8, outline=True)
+
+    craft = solid("craft", Box(hp.x0 + 10, hp.x0 + 36, hp.y0 + 10, hp.y0 + 36, hp.z1, hp.z1 + 40))
+    cx, cy = hcx, hcy
+    craft.node(ellipse(cx, cy, 6, 2.6, 12), kind="shadow", tone=4, keep=True)
+    up = [(0, 2), (0, -CRAFT_RISE - 2)]
+    craft.node([(cx - 7, cy - 4), (cx + 6, cy - 4.5), (cx + 8, cy - 3), (cx + 6, cy - 1.5), (cx - 6, cy - 1.5),
+                (cx - 8, cy - 3)], kind="craft", role="body", tone=13, keep=True, sweep=up)
+    craft.node([(cx - 3, cy - 4.4), (cx + 3.5, cy - 4.6), (cx + 2.5, cy - 7), (cx - 2, cy - 7)],
+               kind="craft", role="canopy", tone=3, keep=True, sweep=up)
+    craft.node([(cx - 9, cy - 8.2), (cx + 9, cy - 8.2), (cx + 9, cy - 7.4), (cx - 9, cy - 7.4)],
+               kind="craft", role="rotor", tone=10, keep=True, sweep=up)
+    craft.node([(cx + 7.5, cy - 3.6), (cx + 8.7, cy - 3), (cx + 7.5, cy - 2.4), (cx + 6.3, cy - 3)],
+               kind="craft", role="beacon", low=6, high=15, param=1, tone=15, sweep=up)
+    return SOLIDS
+
+
+# ------------------------------------------------------------------ the depth order and the clipping
+def screen_poly(pts):
+    p = Polygon(pts)
+    return p if p.is_valid else p.buffer(0)
+
+
+def behind(a, b):
+    """Whether box a is wholly behind box b: separated along some axis, toward the viewer."""
+    return a.x1 <= b.x0 or a.y1 <= b.y0 or a.z1 <= b.z0
+
+
+def order(solids):
+    """The solids back to front: a topological sort of who is behind whom where they overlap on screen."""
+    n = len(solids)
+    hull = []
+    for s in solids:
+        g = shapely.union_all([reach(dict(kind="node", item=it)) if it.kind == "node" else screen_poly(it.pts)
+                               for it in s.items])
+        hull.append(g)
+    after = {k: set() for k in range(n)}
+    incoming = [0] * n
+    for i in range(n):
+        for j in range(i + 1, n):
+            if not hull[i].intersects(hull[j]):
+                continue
+            a, b = solids[i].box, solids[j].box
+            ab, ba = behind(a, b), behind(b, a)
+            if not (ab or ba): print("INTERSECT", solids[i].name, solids[j].name); continue
+            if ab and ba:
+                continue
+            lo, hi = (i, j) if ab else (j, i)
+            after[lo].add(hi)
+            incoming[hi] += 1
+    ready = sorted(k for k in range(n) if incoming[k] == 0)
+    out = []
+    while ready:
+        k = ready.pop(0)
+        out.append(solids[k])
+        for m in sorted(after[k]):
+            incoming[m] -= 1
+            if incoming[m] == 0:
+                ready.append(m)
+                ready.sort()
+    assert len(out) == n, "a cycle in the depth order"
+    return out
+
+
+def pieces(g):
+    """A clipped region as simple outlines on the grid: holes cut away with a vertical line
+    through each, long outlines halved, slivers dropped."""
+    if g.is_empty:
+        return []
+    if g.geom_type in ("MultiPolygon", "GeometryCollection"):
+        return [p for q in g.geoms for p in pieces(q)]
+    if g.geom_type != "Polygon":
+        return []
+    if g.area < 0.6:
+        return []
+    if g.interiors:
+        hole = g.interiors[0]
+        xs = [p[0] for p in hole.coords]
+        cut = round((min(xs) + max(xs)) / 2 / GRID) * GRID
+        if not (min(xs) < cut < max(xs)):
+            cut = (min(xs) + max(xs)) / 2
+        x0, y0, x1, y1 = g.bounds
+        return (pieces(g.intersection(rect(x0 - 1, y0 - 1, cut, y1 + 1), grid_size=GRID)) +
+                pieces(g.intersection(rect(cut, y0 - 1, x1 + 1, y1 + 1), grid_size=GRID)))
+    pts = tidy(list(g.exterior.coords)[:-1])
+    if pts is None:
+        return []
+    if len(pts) > 60:
+        x0, y0, x1, y1 = g.bounds
+        if x1 - x0 >= y1 - y0:
+            cut = round((x0 + x1) / 2 / GRID) * GRID
+            halves = (rect(x0 - 1, y0 - 1, cut, y1 + 1), rect(cut, y0 - 1, x1 + 1, y1 + 1))
+        else:
+            cut = round((y0 + y1) / 2 / GRID) * GRID
+            halves = (rect(x0 - 1, y0 - 1, x1 + 1, cut), rect(x0 - 1, cut, x1 + 1, y1 + 1))
+        return [p for h in halves for p in pieces(g.intersection(h, grid_size=GRID))]
+    return [pts]
+
+
+def tidy(pts):
+    """Drops repeated and collinear points and spikes (turns within 2.5 degrees of straight back)."""
+    pts = [(round(x / GRID) * GRID, round(y / GRID) * GRID) for x, y in pts]
+    changed = True
+    while changed and len(pts) >= 3:
+        changed = False
+        for k in range(len(pts)):
+            a, b, c = pts[k - 1], pts[k], pts[(k + 1) % len(pts)]
+            if b == a or b == c or abs(cross(sub(b, a), sub(c, b))) < 1e-9:
+                del pts[k]
+                changed = True
+                break
+            u, v = sub(a, b), sub(c, b)
+            cosine = (u[0] * v[0] + u[1] * v[1]) / (length(u) * length(v))
+            if cosine > math.cos(math.radians(2.6)):
+                del pts[k]
+                changed = True
+                break
+    if len(pts) < 3 or abs(area(pts)) < 0.6 or not simple(pts):
+        return None
+    pts = start_long(pts)
+    try:
+        check(pts, "piece")
+    except AssertionError:
+        return None
+    return pts
+
+
+def compose():
+    """The artwork's paths and nodes, in drawing order: static outlines clipped front to back."""
+    solids = order(city())
+    flat = [(s, it) for s in solids for it in s.items]
+    cover = Polygon()
+    out = []
+    dropped = 0.0
+    for s, it in reversed(flat):
+        if it.kind == "node":
+            out.append(dict(kind="node", item=it, solid=s))
+            if it.node.get("occ"):      # a node always shown, always in place: it hides what is behind it
+                g = screen_poly(it.pts).buffer(-0.3, join_style="mitre")
+                cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
+            continue
+        g = screen_poly(it.pts)
+        vis = g.intersection(STAGE, grid_size=GRID)
+        if not cover.is_empty:
+            vis = vis.difference(cover, grid_size=GRID)
+        ps = pieces(vis)
+        dropped += max(0.0, vis.area - sum(abs(area(p)) for p in ps))
+        for p in reversed(ps):
+            out.append(dict(kind=it.kind, pts=p, tone=it.tone, width=it.width))
+        if it.occ:
+            cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
+    out.reverse()
+    return solids, merge(out), dropped
+
+
+def reach(e):
+    """Where an element can ever draw: a node over its whole travel, a line along its stroke."""
+    if e["kind"] == "node":
+        it = e["item"]
+        base = screen_poly(it.pts)
+        moves = it.node.get("sweep", [(0, 0)])
+        g = shapely.union_all([shapely.affinity.translate(base, dx, dy) for dx, dy in moves]).convex_hull
+        return g.buffer(it.node.get("spread", 0.6))
+    if e["kind"] == "line":
+        return Polygon(e["pts"]).exterior.buffer(e["width"] / 2 + 0.1)
+    return Polygon(e["pts"])
+
+
+def merge(out):
+    """Joins touching static outlines of the same grey into one, where nothing drawn between
+    them in the order overlaps either, then puts everything back in an order that keeps every
+    overlap the right way round. Fewer, longer outlines: fewer bytes, the same picture."""
+    from shapely.strtree import STRtree
+    n = len(out)
+    shapes = [reach(e) for e in out]
+    tree = STRtree(shapes)
+    succ = [set() for _ in range(n)]
+    pred = [set() for _ in range(n)]
+    for i in range(n):
+        for j in tree.query(shapes[i]):
+            j = int(j)
+            if j <= i:
+                continue
+            if shapes[i].intersection(shapes[j]).area > 0.02:
+                succ[i].add(j)
+                pred[j].add(i)
+    alive = [True] * n
+    poly = [Polygon(e["pts"]) if e["kind"] == "fill" else None for e in out]
+
+    def path(a, b):
+        """Whether b can be reached from a along the order's edges."""
+        seen, stack = {a}, [a]
+        while stack:
+            k = stack.pop()
+            for m in succ[k]:
+                if m == b:
+                    return True
+                if m not in seen:
+                    seen.add(m)
+                    stack.append(m)
+        return False
+
+    changed = True
+    while changed:
+        changed = False
+        live = [k for k in range(n) if alive[k] and poly[k] is not None]
+        t2 = STRtree([poly[k] for k in live])
+        for ai, a in enumerate(live):
+            if not alive[a]:
+                continue
+            for bi in t2.query(poly[a]):
+                b = live[int(bi)]
+                if b == a or not alive[b] or not alive[a] or out[a]["tone"] != out[b]["tone"]:
+                    continue
+                if poly[a].intersection(poly[b]).length < 0.5 and poly[a].boundary.intersection(poly[b].boundary).length < 0.5:
+                    continue
+                if path(a, b) or path(b, a):
+                    continue
+                u = shapely.union_all([poly[a], poly[b]], grid_size=GRID)
+                if u.geom_type != "Polygon" or u.interiors:
+                    continue
+                pts = tidy(list(u.exterior.coords)[:-1])
+                if pts is None or len(pts) > 60:
+                    continue
+                poly[a] = Polygon(pts)
+                out[a] = dict(out[a], pts=pts)
+                alive[b] = False
+                for m in succ[b]:
+                    pred[m].discard(b)
+                    if m != a:
+                        succ[a].add(m)
+                        pred[m].add(a)
+                for m in pred[b]:
+                    succ[m].discard(b)
+                    if m != a:
+                        pred[a].add(m)
+                        succ[m].add(a)
+                succ[a].discard(a)
+                pred[a].discard(a)
+                changed = True
+    # back in order: a topological sort, keeping the original order where free
+    import heapq
+    count = {k: len([m for m in pred[k] if alive[m]]) for k in range(n) if alive[k]}
+    ready = [k for k, c in count.items() if c == 0]
+    heapq.heapify(ready)
+    final = []
+    while ready:
+        k = heapq.heappop(ready)
+        final.append(out[k])
+        for m in succ[k]:
+            if alive[m]:
+                count[m] -= 1
+                if count[m] == 0:
+                    heapq.heappush(ready, m)
+    assert len(final) == sum(alive), "the merged order has a cycle"
+    return final
+
+
+# ------------------------------------------------------------------ nodes
+MOVING = ("light", "fan", "dish", "craft", "shadow", "train")
+KINDS = ["fixed", "window", "glow", "glyph", "pattern", "panel", "sand", "neon", "ring", "light", "fan", "dish",
+         "craft", "shadow", "train"]
+
+
+class Node:
+    def __init__(self, item):
+        spec = item.node
+        self.kind = spec["kind"]
+        self.role = spec.get("role", self.kind)
+        self.param = spec.get("param", 0)
+        self.low, self.high = spec.get("low", 0), spec.get("high", 0)
+        self.tone = spec.get("tone", 8)
+        self.keep = spec.get("keep", False)
+        self.outline = spec.get("outline", False)
+        pts = item.pts
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        self.ox, self.oy = spec.get("pivot", (round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)))
+        self.rel = [(round((x - self.ox) / GRID) * GRID, round((y - self.oy) / GRID) * GRID) for x, y in pts]
+        self.rel = start_long(self.rel)
+        self.abs = [(x + self.ox, y + self.oy) for x, y in self.rel]
+
+    @property
+    def fill(self):
+        return not self.outline
+
+
+def build():
+    solids, out, dropped = compose()
+    nodes = []
+    for e in out:
+        if e["kind"] == "node":
+            n = Node(e["item"])
+            e["node"] = n
+            nodes.append(n)
+    # node numbers: the header's bars 0..7, then by kind so display.cpp walks them in groups
+    rank = {k: i for i, k in enumerate(KINDS)}
+    numbered = sorted(nodes, key=lambda n: rank[n.kind])
+    for i, n in enumerate(numbered):
+        n.index = 8 + i
+    return dict(solids=solids, out=out, nodes=numbered, dropped=dropped)
+
+
+# ------------------------------------------------------------------ writing
+def path_d(pts, dx=0.0, dy=0.0):
+    return "M" + " L".join(f"{num(x - dx)},{num(y - dy)}" for x, y in pts) + " Z"
+
+
 def write_panel(sc):
-    nodes = sc["nodes"]
-    fills = lot_fills(sc)
-    lot_of = {}
-    for r in sc["rows"]:
-        lot_of[r["first"]] = r
     out = [f'<g id="{ID}_panel">']
-    for idx in sc["order"]:
-        q = nodes[idx - 8]
-        small = SMALLEST_SCALE if idx < sc["car_first"] and idx not in [k for _, _, k in sc["traffic"]] and idx != sc["beam"] else 1.0
-        check(q, f"node {idx} ({q.role})", small)
-        fill, stroke, width = q.paint
-        if q.role == "body":
-            q.fill = fills[lot_of[idx]["t"]]
-        d = "M" + " L".join(f"{num(p[0] - q.ox)},{num(p[1] - q.oy)}" for p in q.points) + " Z"
-        f = fill if q.fill else "none"
-        out.append(f'<path id="{ID}_node_{idx}" d="{d}" fill="{f}" stroke="{stroke}" stroke-width="{num(width)}"/>')
-    for k, (fill, stroke, width) in enumerate(PALETTE):
-        out.append(f'<circle id="{ID}_palette_{k}" cx="640" cy="0" r="1" fill="{fill}" stroke="{stroke}" stroke-width="{num(width)}"/>')
+    fill_static = 0.0
+    for e in sc["out"]:
+        if e["kind"] == "fill":
+            check(e["pts"], "a static outline")
+            out.append(f'<path d="{path_d(e["pts"])}" fill="{grey(e["tone"])}"/>')
+            fill_static += abs(area(e["pts"]))
+        elif e["kind"] == "line":
+            check(e["pts"], "a static line")
+            out.append(f'<path d="{path_d(e["pts"])}" fill="none" stroke="{grey(e["tone"])}" stroke-width="{num(e["width"])}"/>')
+        else:
+            n = e["node"]
+            check(n.rel, f"node {n.index} ({n.role})", 63)
+            t = grey(n.tone)
+            if n.keep:
+                paint = f'fill="{t}" stroke="{t}" stroke-width="0.3"'
+            elif n.outline:
+                paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
+            else:
+                paint = f'fill="{t}" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
+            out.append(f'<path id="{ID}_node_{n.index}" d="{path_d(n.rel)}" {paint}/>')
+    for k in range(16):
+        out.append(f'<circle id="{ID}_palette_{k}" cx="640" cy="0" r="1" fill="{grey(k)}" stroke="{grey(k)}" '
+                   f'stroke-width="{num(PAL_WIDTH)}"/>')
     out.append(f'<text id="{ID}_text_16" transform="matrix(1 0 0 1 640 320)" fill="#BDBDBD" '
                f'font-family="UniversNextPro-Light" font-size="10px">-</text>')
     out.append(HEADER.replace("velvet_", ID + "_").strip())
     out.append("</g>")
     text = "\n".join(out) + "\n"
-    assert len(text.encode()) <= 65536, f"artwork is {len(text.encode())} bytes, over 64 KiB"
+    size = len(text.encode())
+    if size > ARTWORK_LIMIT: print(f"OVER: artwork is {size} bytes, over {ARTWORK_LIMIT}")
     (HERE / "panel.svg.fragment").write_text(text)
-    return len(text.encode())
+    return size, fill_static
 
 
-def lot_points(r, nodes):
-    return sum(len(nodes[r["first"] - 8 + k].points) for k in range(len(r["roles"])))
+def train_course(sc):
+    """Where the train can be seen: how far before and after its home (px along screen x) it is
+    wholly hidden, behind what is drawn after it, under the header or off the screen."""
+    out = sc["out"]
+    first = min(k for k, e in enumerate(out) if e["kind"] == "node" and e["node"].kind == "train")
+    front = shapely.union_all([Polygon(e["pts"]) for e in out[first:] if e["kind"] == "fill"] +
+                              [rect(-10, -10, 490, TOP)], grid_size=GRID)
+    train = shapely.union_all([Polygon(n.abs) for n in sc["nodes"] if n.kind == "train"]).buffer(0.3)
+
+    def seen(d):
+        g = shapely.affinity.translate(train, d, d / 2).intersection(STAGE)
+        return g.difference(front).area > 0.25
+    assert seen(0), "the train is hidden at home"
+    lo = 0
+    while seen(lo - 1):
+        lo -= 1
+    hi = 0
+    while seen(hi + 1):
+        hi += 1
+    return lo - 1, hi + 1
 
 
 def write_tables(sc):
-    rows, nodes = sc["rows"], sc["nodes"]
-    lead, wing, car_first = sc["lead"], sc["wing"], sc["car_first"]
+    nodes = sc["nodes"]
     n = len(nodes) + 8
-    lead_box = car_box(lead)
-    wing_box = car_box(wing)
-    src = sc["beam_lot"]
-    L = []
-    L.append("// Generated by tools/make_panel.py from the same description as panel.svg.fragment: do not edit.")
-    L.append("#pragma once")
-    L.append('#include <opxy/types.hpp>')
-    L.append("")
-    L.append(f"namespace {ID} {{ namespace city {{")
-    L.append(f"const opxy::u32 node_count = {n};")
-    L.append(f"const opxy::u32 lot_count = {len(rows)};")
-    L.append(f"const opxy::u32 most_windows = {MOST_WINDOWS};")
-    L.append(f"const opxy::u32 car_first = {car_first};      // the lead car's {len(lead)} nodes, then the wingman's {len(wing)}")
-    L.append(f"const opxy::u32 lead_nodes = {len(lead)}, wing_nodes = {len(wing)};")
-    L.append(f"// Each car's reach from its origin, px (left, right): it's off screen past these.")
-    L.append(f"const opxy::i32 lead_left = {lead_box[0]}, lead_right = {lead_box[1]}, wing_left = {wing_box[0]}, wing_right = {wing_box[1]};")
-    L.append(f"const opxy::u32 beam = {sc['beam']}, beam_lot = {src['t']};   // the searchlight, and the lot it stands on")
-    L.append(f"const opxy::i32 beam_x = {round(src['s']['roof'][0])}, beam_y = {round(src['s']['roof'][1])};   // its foot, from the lot's pivot at unit scale")
-    L.append("// A lot: its pivot on screen (px), its first node (its body), its windows (the nodes after the")
-    L.append("// body) and which face each is on (bit k set: window k is on the right face), its column (the")
-    L.append("// skyline's phase), and whether it has a neon strip (one node after the windows), a blade sign")
-    L.append("// (two after that) and a mast (two rings and a light, last).")
-    L.append("struct Lot { short x, y; unsigned short first, faces; unsigned char windows, column, neon, sign, mast; };")
-    L.append("const Lot lots[lot_count] = {")
-    for r in rows:
-        s = r["s"]
-        wins = [q for q in r["roles"] if q.startswith("win")]
-        faces = sum(1 << k for k in range(len(wins)) if r["faces"][k])
-        L.append(f"    {{{r['x']}, {r['y']}, {r['first']}, {faces}, {len(wins)}, {r['column']}, {int(s['neon'])}, "
-                 f"{int(s['sign'])}, {int(s['mast'])}}},")
-    L.append("};")
-    L.append("// The traffic: each lane's height (px), its speed as a share of the cruise (Q10), whether it")
-    L.append("// runs rightward, its first node and its number of cars; each car's place along its lane's")
-    L.append("// loop (px).")
-    L.append(f"const opxy::u32 lane_count = {len(LANES)};")
-    L.append(f"const opxy::i32 lane_length = {LANE_LENGTH}, lane_left = {LANE_LEFT};")
-    L.append("struct Lane { short y, share; unsigned short rightward, first, cars; };")
-    firsts = {}
-    for li, c, k in sc["traffic"]:
-        firsts.setdefault(li, k)
-    L.append("const Lane lanes[lane_count] = {")
-    for li, lane in enumerate(LANES):
-        L.append(f"    {{{lane['y']}, {round(abs(lane['speed']) * 1024 / CRUISE)}, {int(lane['speed'] > 0)}, "
-                 f"{firsts[li]}, {lane['cars']}}},")
-    L.append("};")
-    spots = []
-    for li, c, k in sc["traffic"]:
-        lane = LANES[li]
-        base = c * LANE_LENGTH // lane["cars"]
-        spots.append(str(base + (r16(li, c, 300) % (LANE_LENGTH // lane["cars"] // 2))))
-    L.append(f"const short spots[{len(spots)}] = {{" + ", ".join(spots) + "};")
-    L.append("// Each lot node's origin from its lot's pivot, px at unit scale (the others': 0).")
-    lot_nodes_set = set()
-    for r in rows:
-        lot_nodes_set |= set(range(r["first"], r["first"] + len(r["roles"])))
-    ox = ["0"] * 8 + [str(nodes[k - 8].ox if k in lot_nodes_set else 0) for k in range(8, n)]
-    oy = ["0"] * 8 + [str(nodes[k - 8].oy if k in lot_nodes_set else 0) for k in range(8, n)]
-    L.append("const short origin_x[node_count] = {" + ", ".join(ox) + "};")
-    L.append("const short origin_y[node_count] = {" + ", ".join(oy) + "};")
-    L.append("// Each node's points: what redrawing it costs.")
-    pts = ["4"] * 8 + [str(len(q.points)) for q in nodes]
-    L.append("const unsigned char points[node_count] = {" + ", ".join(pts) + "};")
-    L.append("}}")
+    start, end = sc["course"]
+    restyle_end = min(k.index for k in nodes if k.kind in MOVING)
+    L = ["// Generated by tools/make_panel.py from the same description as panel.svg.fragment: do not edit.",
+         "#pragma once",
+         "#include <opxy/types.hpp>",
+         "",
+         f"namespace {ID} {{ namespace city {{",
+         f"const opxy::u32 node_count = {n};",
+         "// What each node is (display.cpp's restyled() and moved() say what each does): the header's",
+         "// bars are 0..7, then the city's nodes, those that restyle first, then those that move.",
+         "enum Kind : unsigned char { " + ", ".join(KINDS) + " };",
+         f"const opxy::u32 restyle_end = {restyle_end};   // nodes 8 up to this restyle; the rest move",
+         "const unsigned char kind[node_count] = {" + ", ".join(["0"] * 8 + [str(KINDS.index(k.kind)) for k in nodes]) + "};",
+         "// Each node's place at rest on screen, px: its outline is drawn about it.",
+         "const short home_x[node_count] = {" + ", ".join(["0"] * 8 + [str(k.ox) for k in nodes]) + "};",
+         "const short home_y[node_count] = {" + ", ".join(["0"] * 8 + [str(k.oy) for k in nodes]) + "};",
+         "// Its palette greys, dark and bright (0..15), and a number its kind reads: a window's or a",
+         "// light's rank or phase, a pattern's wave, a ring's place, a fan's pose.",
+         "const unsigned char low[node_count] = {" + ", ".join(["0"] * 8 + [str(k.low) for k in nodes]) + "};",
+         "const unsigned char high[node_count] = {" + ", ".join(["0"] * 8 + [str(k.high) for k in nodes]) + "};",
+         "const unsigned char param[node_count] = {" + ", ".join(["0"] * 8 + [str(k.param) for k in nodes]) + "};",
+         "// Its points: what redrawing it costs.",
+         "const unsigned char points[node_count] = {" + ", ".join(["4"] * 8 + [str(len(k.rel)) for k in nodes]) + "};",
+         "// The train's run, px along screen x from home (it moves half that down): wholly hidden at",
+         "// both ends, behind the nearer towers or off the screen.",
+         f"const opxy::i32 train_start = {start}, train_end = {end};",
+         "// The still artwork's fill below the header and the header's own, px^2: the device fills",
+         "// these every frame.",
+         f"const opxy::i32 static_fill = {round(sc['fill'])}, header_fill = {HEADER_FILL};",
+         "}}"]
     (HERE / "city.h").write_text("\n".join(L) + "\n")
 
 
-def car_box(nodes):
-    left = min(min(p[0] - q.ox for p in q.points) for q in nodes)
-    right = max(max(p[0] - q.ox for p in q.points) for q in nodes)
-    return math.floor(left) - 2, math.ceil(right) + 2
-
-
 def write_outlines(sc):
-    """Each node's outline measures, for tests/screen.cpp's drawing-rule checks."""
-    nodes = sc["nodes"]
+    """Each node's outline measures, for tests/screen.cpp's drawing-rule and fill checks."""
     L = ["// Generated by tools/make_panel.py: each node's outline as the artwork draws it. Do not edit.",
          "// points, the shortest edge and the closing edge (Q10 px at unit scale), the sharpest turn",
-         "// (tenths of a degree from straight back), whether it has area and a fill, and its box",
-         "// about its origin (Q10 px).",
+         "// (tenths of a degree from straight back), its area (1/16 px^2), whether it has a fill, and",
+         "// its box about its origin (Q10 px).",
          "#pragma once",
          "struct Outline { int points, gap, closing, turn, area, filled, left, right, top, bottom; };",
-         f"const Outline outlines[{len(nodes) + 8}] = {{"]
-    L += ["    {4, 61440, 20480, 900, 1, 1, 0, 61440, 0, 20480},"] * 8      # the header's bars
-    for q in nodes:
-        m = measures(q)
+         f"const Outline outlines[{len(sc['nodes']) + 8}] = {{"]
+    L += ["    {4, 61440, 20480, 900, 19200, 1, 0, 61440, 0, 20480},"] * 8      # the header's bars
+    q10 = lambda v: int(math.floor(v * 1024)) if v < 0 else int(math.ceil(v * 1024))
+    for k in sc["nodes"]:
+        m = measures(k.rel)
         x0, x1, y0, y1 = m["box"]
-        q10 = lambda v: int(math.floor(v * 1024)) if v < 0 else int(math.ceil(v * 1024))
-        # rounded down a little, so the last bit of a platform's floating point never shows
         L.append(f"    {{{m['count']}, {int(m['gap'] * 1024 - 0.01)}, {int(m['closing'] * 1024 - 0.01)}, "
-                 f"{int(m['turn'] * 10 - 0.01)}, "
-                 f"{int(m['area'] > 0.5)}, {int(q.fill)}, {q10(x0)}, {q10(x1)}, {q10(y0)}, {q10(y1)}}},  // {q.role}")
+                 f"{int(m['turn'] * 10 - 0.01)}, {max(1, round(m['area'] * 16))}, {int(k.fill)}, "
+                 f"{q10(x0)}, {q10(x1)}, {q10(y0)}, {q10(y1)}}},  // {k.role}")
     L.append("};")
     (HERE / "tests" / "outlines.h").write_text("\n".join(L) + "\n")
 
 
 # ------------------------------------------------------------------ a mirror of display.cpp's frame, for previews
-CRUISE = 110                                          # display.cpp's cruise, px a second
+SLOW, FAST = 20, 90                   # display.cpp's train speeds, px a second
 
 
-def smooth16(u):                                      # 3u^2 - 2u^3, Q16
-    u2 = (u * u) >> 16
-    return (u2 * (196608 - 2 * u)) >> 16
+def hash32(i, j, k):
+    h = (i * 374761393 + j * 668265263 + k * 1442695041) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    return h ^ (h >> 16)
 
 
-def wave16(ph, s):
-    sine = smooth16(2 * ph) if ph < 32768 else smooth16(131070 - 2 * ph)
-    saw = ph
-    sq = 65535 if ph < 32768 else 0
-    if s < 21845:
-        return sine + (((saw - sine) * (s * 3)) >> 16)
-    if s < 43690:
-        return saw + (((sq - saw) * ((s - 21845) * 3)) >> 16)
-    pw = 32768 - (((s - 43690) * 3 * 24904) >> 16)
-    return 65535 if ph < pw else 0
+def r16(i, j, k):
+    return hash32(i & 0xFFFFFFFF, j & 0xFFFFFFFF, k) >> 16
 
 
 def sway(turn):
@@ -814,194 +1133,170 @@ def sway(turn):
     return (x * (32768 - abs(x))) >> 18
 
 
-def lot_state(r, c, held, hold, serial, clock):
-    """display.cpp's desired(): a lot's scale code and what each of its parts shows."""
-    t = r["t"]
-    sky = wave16((r["column"] * 11916) & 0xFFFF, c["shape"])
-    mix = (sky * 39322 + r16(t, 0, 1) * 26214) >> 16
-    code = (mix * 63) >> 16
-    rise = 154 + ((c["touch"] * 973) >> 16)
-    wins = []
-    for w in range(sum(1 for q in r["roles"] if q.startswith("win"))):
-        if r16(t, w, 20) < c["bright"]:
-            wins.append(1 + r["faces"][w])
-        elif held and c["touch"] and r16(t * 7 + w, serial, 3) < (c["touch"] >> 1) and hold >= ((r16(t, w, 40) * rise) >> 16):
-            wins.append(3)
-        else:
-            wins.append(0)
-    neon = 3 + min(4, 1 + ((c["reso"] * 4) >> 16)) if r["s"]["neon"] else 0
-    g = c["ring"]
-    first = 0 if g == 0 else 1 + min(2, (g * 6) >> 16)
-    second = 0 if g < 32768 else 1 + min(2, ((g - 32768) * 6) >> 16)
-    sign_lit = r16(t, 0, 8) < c["bright"] + 9830
-    light = ((clock + (r16(t, 0, 9) >> 6)) & 1023) < 280
-    return dict(code=code, wins=wins, neon=neon, rings=(first, second), sign=sign_lit, light=light)
+def between(lo, hi, amount):
+    return min(hi, lo + ((amount * (hi - lo + 1)) >> 16))
 
 
-def frame_places(sc, c, run=None, held=False, hold=0, serial=1, clock=0, share=0, lanes=(0, 0, 0)):
-    """The nodes display.cpp shows: index -> (x, y, scale, palette entry or None, turn degrees)."""
-    rows, nodes = sc["rows"], sc["nodes"]
-    place = {}
-    scales = {}
-    for r in rows:
-        st = lot_state(r, c, held, hold, serial, clock)
-        s = (614 + st["code"] * 11) / 1024
-        scales[r["t"]] = s
-        for k, role in enumerate(r["roles"]):
-            idx = r["first"] + k
-            q = nodes[idx - 8]
-            pal = None
-            if role.startswith("win"):
-                w = st["wins"][int(role[3:])]
-                if not w:
-                    continue
-                pal = w
-            elif role == "neon":
-                pal = st["neon"]
-            elif role == "glow":
-                if not st["sign"]:
-                    continue
-                pal = 11
-            elif role.startswith("ring"):
-                lv = st["rings"][int(role[4:])]
-                if not lv:
-                    continue
-                pal = 7 + lv
-            elif role == "light":
-                pal = 13 if st["light"] else 12
-            place[idx] = (r["x"] + s * q.ox, r["y"] + s * q.oy, s, pal, 0)
-    # the searchlight
-    src = sc["beam_lot"]
-    s = scales[src["t"]]
-    angle = (sway(clock * 9) * 300 >> 10) / 10
-    place[sc["beam"]] = (src["x"] + s * round(src["s"]["roof"][0]), src["y"] + s * round(src["s"]["roof"][1]),
-                         BEAM_SCALE / 1024, None, angle)
-    # the traffic
-    for li, cnum, idx in sc["traffic"]:
-        lane = LANES[li]
-        spot = int(sc_spots(sc)[sc["traffic"].index((li, cnum, idx))])
-        p = (spot + lanes[li]) % LANE_LENGTH
-        x = LANE_LEFT + p if lane["speed"] > 0 else LANE_LEFT + LANE_LENGTH - p
-        place[idx] = (x, lane["y"], 1, None, 0)
-    # the cars
-    lx, ly, wx, wy, bank = car_place(sc, c, run, clock, share)
-    lb, wb = car_box(sc["lead"]), car_box(sc["wing"])
-    if lx + lb[1] > 0 and lx + lb[0] < 480:
-        for k in range(len(sc["lead"])):
-            place[sc["car_first"] + k] = (lx, ly, 1, None, -bank)
-    if c["detune"] > 1966 and wx + wb[1] > 0 and wx + wb[0] < 480:
-        for k in range(len(sc["wing"])):
-            place[sc["car_first"] + len(sc["lead"]) + k] = (wx, wy, 1, None, -bank)
-    return place
+def pattern_of(shape):
+    return 0 if shape < 7864 else 1 if shape < 19661 else 2 if shape < 45875 else 3
 
 
-def sc_spots(sc):
-    out = []
-    for li, c, k in sc["traffic"]:
-        lane = LANES[li]
-        base = c * LANE_LENGTH // lane["cars"]
-        out.append(base + (r16(li, c, 300) % (LANE_LENGTH // lane["cars"] // 2)))
+def ring_level(g, slot):
+    if slot == 0:
+        return 0 if g == 0 else 1 + min(2, (g * 6) >> 16)
+    return 0 if g < 32768 else 1 + min(2, ((g - 32768) * 6) >> 16)
+
+
+def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0):
+    """display.cpp's restyled() and moved(): each node shown -> (x, y, scale, turn degrees, grey or None)."""
+    out = {}
+    pulse = 0
+    if held:
+        t = (clock * 3 // 2) & 1023
+        tri = t if t < 512 else 1023 - t
+        pulse = (tri * (c["swell"] >> 8) * 3) >> 17
+    for k in sc["nodes"]:
+        i, p, lo, hi = k.index, k.param, k.low, k.high
+        x, y, sc_, turn, shade = k.ox, k.oy, 1.0, 0.0, None
+        kind = k.kind
+        if kind == "window":
+            spread = 154 + ((c["swell"] * 973) >> 16)
+            if (p << 8) < c["bright"]:
+                shade = hi
+            elif held and c["swell"] and r16(i, serial, 3) < (c["swell"] >> 1) and hold >= ((r16(i, 0, 40) * spread) >> 16):
+                shade = 15
+            else:
+                shade = lo
+        elif kind == "glow":
+            shade = hi if (p << 8) < c["bright"] else lo
+        elif kind in ("glyph", "panel", "neon"):
+            shade = between(lo, hi, c["reso"])
+        elif kind == "pattern":
+            if p != pattern_of(c["shape"]):
+                continue
+            shade = min(15, between(lo, hi, c["reso"]) + pulse)
+        elif kind == "sand":
+            dd = ((c["detune"] * SAND_DRIFT * 2) >> 16) / 2
+            y += dd if p else -dd
+        elif kind == "ring":
+            level = ring_level(c["ring"], p)
+            if not level:
+                continue
+            shade = lo + (level - 1) * (hi - lo) // 2
+        elif kind == "light":
+            shade = hi if ((clock + p * 4) & 1023) < 230 else lo
+        elif kind == "fan":
+            if (((clock * 8 + (p // 3) * 341) >> 10) % 3) != p % 3:
+                continue
+        elif kind == "dish":
+            turn = ((sway(clock * 5) * 8) >> 10)
+        elif kind in ("craft", "shadow"):
+            up = (c["bite"] * CRAFT_RISE) >> 16
+            bob = ((sway(clock * 41) + 512) >> 10) if held and up else 0
+            if kind == "shadow":
+                sc_ = (1024 - up * 10) / 1024
+            else:
+                y += -up + bob
+                if p:
+                    shade = hi if ((clock + 300) & 1023) < 120 else lo
+        elif kind == "train":
+            start, end = sc["course"]
+            if not (start <= d <= end):
+                continue
+            x += d
+            y += d / 2
+        out[i] = (x, y, sc_, turn, shade)
     return out
 
 
-def course(sc):
-    """The lead car's way across, px: from just off the left to where the wingman is off the right, and a gap."""
-    lb, wb = car_box(sc["lead"]), car_box(sc["wing"])
-    left = -lb[1]
-    exit_ = 480 + WING_BEHIND + WING_APART - wb[0]
-    return left, exit_ + GAP - left
-
-
-WING_BEHIND, WING_APART, GAP, HOME = 66, 16, 70, 300
-
-
-def car_place(sc, c, run=None, clock=0, share=0):
-    """display.cpp's draw_cars, in px."""
-    left, _ = course(sc)
-    x = HOME if run is None else left + run
-    bob = (sway(clock * 31) * 3 // 2) * share / 1024 / 1024
-    bank = (sway(clock * 31 + 16384) * 15 / 1024) * share / 1024 / 10
-    weave = (c["chorus"] >> 6) * 5 * sway(clock * 58) / 1024 / 1024
-    y = CAR_Y - c["ribbon"] * CAR_RISE / 65536 + bob + weave
-    apart = c["detune"] * WING_APART / 65536
-    return x, y, x - WING_BEHIND - apart, y + 16 + apart * 0.6 - 2 * weave, bank
-
-
-CAR_Y, CAR_RISE = 132, 48
-
-
 def preview(out_dir, name, sc, c, **kw):
-    place = frame_places(sc, c, **kw)
-    nodes = sc["nodes"]
-    fills = lot_fills(sc)
+    place = mirror(sc, c, **kw)
     svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 220" width="480" height="220">',
            '<style>@font-face{font-family:UniversNextPro-Light;src:url(file:///Users/mmockett/Documents/GitHub/OP-XY/tools/render/font/UniversNextPro-Light.ttf)}</style>',
            '<rect width="480" height="220" fill="#000"/>']
-    lot_of = {r["first"]: r for r in sc["rows"]}
-    for idx in sc["order"]:
-        if idx not in place:
-            continue
-        q = nodes[idx - 8]
-        x, y, s, pal, turn = place[idx]
-        fill, stroke, width = q.paint if pal is None else PALETTE[pal]
-        filled = fills[lot_of[idx]["t"]] if q.role == "body" else q.fill
-        if not filled:
-            fill = "none"
-        d = "M" + " L".join(f"{num(p[0] - q.ox)},{num(p[1] - q.oy)}" for p in q.points) + " Z"
-        co, si = math.cos(math.radians(turn)) * s, math.sin(math.radians(turn)) * s
-        svg.append(f'<path transform="matrix({co:.4f} {si:.4f} {-si:.4f} {co:.4f} {x:.2f} {y:.2f})" d="{d}" '
-                   f'fill="{fill}" stroke="{stroke}" stroke-width="{width}"/>')
+    fill = 0.0
+    for e in sc["out"]:
+        if e["kind"] == "fill":
+            svg.append(f'<path d="{path_d(e["pts"])}" fill="{grey(e["tone"])}"/>')
+        elif e["kind"] == "line":
+            svg.append(f'<path d="{path_d(e["pts"])}" fill="none" stroke="{grey(e["tone"])}" stroke-width="{num(e["width"])}"/>')
+        else:
+            k = e["node"]
+            if k.index not in place:
+                continue
+            x, y, s, turn, shade = place[k.index]
+            t = grey(k.tone if shade is None else shade)
+            width = 0.3 if k.keep else PAL_WIDTH
+            f = "none" if k.outline else t
+            if not k.outline:
+                fill += measures(k.rel)["area"] * s * s
+            co, si = math.cos(math.radians(turn)) * s, math.sin(math.radians(turn)) * s
+            svg.append(f'<path transform="matrix({co:.4f} {si:.4f} {-si:.4f} {co:.4f} {x:.2f} {y:.2f})" '
+                       f'd="{path_d(k.rel)}" fill="{f}" stroke="{t}" stroke-width="{width}"/>')
     svg.append('<rect width="480" height="38" fill="#000"/>')
     shades = ["#000000", "#323232", "#4B4B4B", "#646464", "#7D7D7D", "#969696", "#AFAFAF", "#CDCDCD"]
-    for k, g in enumerate(shades):
-        svg.append(f'<rect x="{60 * k}" width="60" height="20" fill="{g}"/>')
+    for k, g_ in enumerate(shades):
+        svg.append(f'<rect x="{60 * k}" width="60" height="20" fill="{g_}"/>')
     titles = ["shape", "detune", "bright", "reso"]
-    grey = ["chorus", "ring", "touch", "ribbon"]
-    values = c.get("values", ["", "", "", "", "", "", "", ""])
+    lower = ["chorus", "ring", "swell", "bite"]
+    values = c.get("values", [""] * 8)
     for k in range(4):
         col = "#CBCBCB" if k < 2 else "#000"
         svg.append(f'<text x="{5 + 120 * k}" y="10" font-family="UniversNextPro-Light" font-size="10" fill="{col}">{titles[k]}</text>')
         svg.append(f'<text x="{65 + 120 * k}" y="17.4" font-family="UniversNextPro-Light" font-size="20" fill="{col}">{values[k]}</text>')
-        svg.append(f'<text x="{5 + 120 * k}" y="33" font-family="UniversNextPro-Light" font-size="10" fill="#5A5A5A">{grey[k]}</text>')
+        svg.append(f'<text x="{5 + 120 * k}" y="33" font-family="UniversNextPro-Light" font-size="10" fill="#5A5A5A">{lower[k]}</text>')
         svg.append(f'<text x="{65 + 120 * k}" y="33" font-family="UniversNextPro-Light" font-size="13" fill="#707070">{values[4 + k]}</text>')
     svg.append("</svg>")
     pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
     (pathlib.Path(out_dir) / f"{name}.svg").write_text("\n".join(svg))
-    return place
-
-
-def fill_area(sc, place):
-    """The filled area on screen, overlaps counted, px^2: what the device pays for every frame."""
-    nodes = sc["nodes"]
-    fills = lot_fills(sc)
-    lot_of = {r["first"]: r for r in sc["rows"]}
-    total = 0.0
-    for idx, (x, y, s, pal, turn) in place.items():
-        q = nodes[idx - 8]
-        filled = fills[lot_of[idx]["t"]] if q.role == "body" else q.fill
-        if not filled:
-            continue
-        pts = [(x + s * (p[0] - q.ox), y + s * (p[1] - q.oy)) for p in q.points]
-        total += clip_area(pts, 0, 38, 480, 220)
-    return total
+    return fill
 
 
 def previews(out, sc):
     q = lambda v: min(65535, int(v * 65536))
-    tyrell = dict(shape=q(.33), detune=q(.22), bright=q(.46), reso=q(.28), chorus=q(.45), ring=0, touch=q(.8),
-                  ribbon=q(.5), values=["33", "3c", "920", "28", "45", "0", "80", "0st"])
-    zero = {k: 0 for k in ("shape", "detune", "bright", "reso", "chorus", "ring", "touch", "ribbon")}
-    full = {k: 65535 for k in zero}
-    states = [
-        ("resting", tyrell, {}),
-        ("flying", tyrell, dict(run=330, held=True, hold=900, clock=700, share=1024, lanes=(140, 260, 90))),
-        ("all0", dict(zero, values=["0", "0c", "80", "0", "0", "0", "0", "-12st"]), {}),
-        ("all100", dict(full, values=["100", "30c", "16k", "100", "100", "100", "100", "+12st"]),
-         dict(run=420, held=True, hold=4000, clock=300, share=1024, lanes=(300, 40, 200))),
-    ]
+    names = ("shape", "detune", "bright", "reso", "chorus", "ring", "swell", "bite")
+    tyrell = dict(zip(names, map(q, (.33, .22, .46, .28, .45, 0, .8, .5))),
+                  values=["33", "3c", "920", "28", "45", "0", "80", "0st"])
+    zero = dict({k: 0 for k in names}, values=["0", "0c", "80", "0", "0", "0", "0", "-12st"])
+    full = dict({k: 65535 for k in names}, values=["100", "30c", "16k", "100", "100", "100", "100", "+12st"])
+    start, end = sc["course"]
+    states = [("resting", tyrell, {}),
+              ("flying", tyrell, dict(held=True, hold=900, clock=700, d=start + (end - start) * 2 // 5)),
+              ("all0", zero, {}),
+              ("all100", full, dict(held=True, hold=4000, clock=300, d=start + (end - start) * 3 // 4))]
     for name, c, kw in states:
-        place = preview(out, name, sc, c, **kw)
-        print(f"{name}: {len(place) + 8} nodes on screen, fill {fill_area(sc, place):.0f} px^2 below the header")
+        f = preview(out, name, sc, c, **kw)
+        print(f"{name}: node fill {f:.0f} px^2")
+
+
+def main():
+    sc = build()
+    size, fill_static = write_panel(sc)
+    sc["fill"] = fill_static
+    sc["course"] = train_course(sc)
+    write_tables(sc)
+    write_outlines(sc)
+    # definition.json declares the frame's nodes: keep its count with the artwork's
+    d = HERE / "definition.json"
+    text = d.read_text()
+    import re
+    d.write_text(re.sub(r'"nodes": \d+', f'"nodes": {len(sc["nodes"]) + 8}', text, count=1))
+    nodes = sc["nodes"]
+    statics = sum(1 for e in sc["out"] if e["kind"] != "node")
+    moving = sum(len(k.rel) for k in nodes if k.kind in MOVING)
+    largest = max(len(k.rel) for k in nodes if k.kind not in MOVING)
+    assert moving + largest <= BUDGET + 60, f"{moving} moving points and a node of {largest}"
+    print(f"{len(nodes) + 8} nodes, {statics} static outlines, artwork {size} bytes of {ARTWORK_LIMIT}, "
+          f"still fill {fill_static:.0f} px^2 ({fill_static / (480 * 182):.2f} of the stage, "
+          f"{(fill_static + HEADER_FILL) / (480 * 182):.2f} with the header), train {sc['course']}")
+    by = {}
+    for k in nodes:
+        by.setdefault(k.kind, [0, 0])
+        by[k.kind][0] += 1
+        by[k.kind][1] += len(k.rel)
+    print(" ".join(f"{k}:{v[0]}n/{v[1]}p" for k, v in by.items()))
+    if "--preview" in sys.argv:
+        previews(sys.argv[sys.argv.index("--preview") + 1], sc)
 
 
 # The SDK's two-page header block, as `sdk.py new --controls 8` writes it, with its
@@ -1033,26 +1328,6 @@ HEADER = """
 <text id="velvet_text_14" transform="matrix(1 0 0 1 305 33)" fill="#707070" font-family="UniversNextPro-Light" font-size="13px">-</text>
 <text id="velvet_text_15" transform="matrix(1 0 0 1 425 33)" fill="#707070" font-family="UniversNextPro-Light" font-size="13px">-</text>
 """
-
-
-def main():
-    sc = scene()
-    size = write_panel(sc)
-    write_tables(sc)
-    write_outlines(sc)
-    rows, nodes = sc["rows"], sc["nodes"]
-    # While flying, the cars, the traffic and the searchlight change every frame; the largest
-    # lot must still fit in what's left, so the city can always restyle.
-    moving = sum(len(q.points) for q in sc["lead"] + sc["wing"]) + \
-        sum(len(nodes[k - 8].points) for _, _, k in sc["traffic"]) + len(nodes[sc["beam"] - 8].points)
-    largest = max(lot_points(r, nodes) for r in rows)
-    assert moving + largest <= BUDGET, f"{moving} moving points and a lot of {largest} are over the budget"
-    masts = sum(r["s"]["mast"] for r in rows)
-    print(f"{len(rows)} lots ({masts} masts), {len(nodes) + 8} nodes, artwork {size} bytes, "
-          f"longest outline {max(len(q.points) for q in nodes)} points, "
-          f"largest lot {largest} points, {moving} moving points")
-    if "--preview" in sys.argv:
-        previews(sys.argv[sys.argv.index("--preview") + 1], sc)
 
 
 if __name__ == "__main__":

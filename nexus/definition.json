@@ -316,13 +316,13 @@
     "outputPeakQ31": 805306368,
     "stereoOutput": 1,
     "display": {
-      "stateBytes": 400,
+      "stateBytes": 84,
       "stateAlignment": 4,
       "paths": 0,
       "points": 0,
-      "nodes": 374,
+      "nodes": 174,
       "texts": 17,
-      "palette": 14
+      "palette": 16
     }
   },
   "press": "page"
