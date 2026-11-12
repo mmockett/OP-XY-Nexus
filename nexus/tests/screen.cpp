@@ -26,12 +26,14 @@ using opxy::draw::unit;
 namespace city = nexus::city;
 
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
-// bars may change besides), and the opaque filled area, header included, at most 1.55 times the picture
-// below the header (480 x 182 px); the fog at most 0.15 of it, and 2.0 times with the fog counted four
-// times: the device blends each of its pixels with what is under it, which costs several opaque fills
-// (metro-5's 0.24 of a picture of fog took the device from about 30 to about 20 frames a second).
+// bars may change besides), and the opaque filled area, header included, at most 1.52 times the picture
+// below the header (480 x 182 px: metro-6 held 30 frames a second at full bright with 1.51, and the far
+// skyline added since is paid for by the clouds taken out); the fog at most 0.15 of it, and 2.0 times
+// with the fog counted four times: the device blends each of its pixels with what is under it, which costs
+// several opaque fills (metro-5's 0.24 of a picture of fog took the device from about 30 to about 20 frames
+// a second). The still artwork's fill counts its circles whole: the device fills all of each.
 const u32 most_points = nexus::screen::budget;
-const double most_fill = 1.55 * 480 * 182;
+const double most_fill = 1.52 * 480 * 182;
 const double fog_weight = 4;
 const double most_fog_fill = 0.15 * 480 * 182;
 const double most_weighted_fill = 2.0 * 480 * 182;     // and with the fog counted fog_weight times

@@ -123,8 +123,9 @@ crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
 tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
 with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
 fans, plant rooms and windows down every face, tall ones two floors high and,
-on the helipad and the towers round its foot, small ones, with dark towers in
-the haze behind under a black sky. Tops are light, sides mid and dark.
+on the helipad and the towers round its foot, small ones. Behind them, under a
+black sky, a far skyline of dark towers, some stepped to a spire, fills the
+gaps between the near ones. Tops are light, sides mid and dark.
 
 The windows light a few at a time, in a scattered order, never a column at
 once. Behind the near city hangs one sheet of fog, over the sky and the far

@@ -625,6 +625,20 @@ def city():
         for r in range(2):
             h.node(quad(bx.L, 2, 15 + r * 8, a - 4.5, 1), kind="glow", low=2, high=14,
                    param=hash32(k, r, 9) & 255, tone=14)
+    # and farther still, in the skyline's gaps: plain towers, no lights, some stepped to a spire, behind the
+    # haze and under the fog with it
+    farther = [  # (fx, fy, a, b, steps)
+        (22, 46, 14, 10, 0), (50, 42, 10, 8, 0), (110, 56, 8, 6, 1), (146, 50, 10, 8, 0), (284, 54, 8, 6, 0),
+        (350, 72, 12, 6, 0), (382, 66, 10, 6, 0), (412, 52, 10, 10, 2), (446, 46, 12, 10, 0),
+    ]
+    for k, (fx, fy, a, b, steps) in enumerate(farther):
+        bx = tower(fx, fy, a, b, -1400 + k * 16)
+        h = solid(f"haze{len(haze) + k}", bx)
+        h.faces(HAZE)
+        for step in range(steps):
+            inset = 2 + 2 * step
+            h.faces_of(Box(bx.x0 + inset, bx.x1 - inset, bx.y0 + inset, bx.y1 - inset,
+                           bx.z1 + 6 * step, bx.z1 + 6 * step + 6), HAZE)
 
     # --- behind the track
     # B: the tall dark tower left of centre, with a plant room on its roof and lit strips
