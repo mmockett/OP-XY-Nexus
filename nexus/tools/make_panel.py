@@ -1015,7 +1015,9 @@ def merge(out):
                 b = live[int(bi)]
                 if b == a or not alive[b] or not alive[a] or out[a]["tone"] != out[b]["tone"]:
                     continue
-                if poly[a].intersection(poly[b]).length < 0.5 and poly[a].boundary.intersection(poly[b].boundary).length < 0.5:
+                # they must share an edge: under half a pixel isn't one (0.49, not 0.5: an edge of exactly half a
+                # pixel comes out a hair either side of it on different machines)
+                if poly[a].intersection(poly[b]).length < 0.49 and poly[a].boundary.intersection(poly[b].boundary).length < 0.49:
                     continue
                 if path(a, b) or path(b, a):
                     continue
