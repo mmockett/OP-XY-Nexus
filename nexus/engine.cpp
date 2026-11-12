@@ -53,10 +53,11 @@ const i32 tone_wander = 5676;            // Q16 octaves at drift 100: the cutoff
 const i32 lowcut_step = 4354;            // Q16 octaves a lowcut step: 20 Hz x 100^(step / 100)
 const i32 high_follow = 26214;           // Q15: the high-pass's resonance is 0.8 of the low-pass's
 const i32 high_most = 29491;             // Q15: and at most 0.9, below self-oscillation
-// Output: 0.2 of full scale per model unit, each layer at cos 45 degrees (balance
-// 50), from Q26 with a shift of 3. A chord of eight peaks near 0.4 to 0.8.
-const i32 output_gain = 1214800200;      // Q31: 0.2 x 0.7071 x 32 / 8
-const i32 ceiling = 0x30000000 >> 3;     // the declared peak, 0.375 of full scale, before the shift
+// Output: 0.39 of full scale per model unit, each layer at cos 45 degrees (balance
+// 50), from Q26 with a shift of 4: the loudest preset's voice peaks near 0.45, and a
+// chord of eight sums to about 1.1 to 1.9 (the OP-XY mixes voices with its own headroom).
+const i32 output_gain = 1184430195;      // Q31: 0.39 x 0.7071 x 32 / 16, 5.8 dB above the 0.2 it was
+const i32 ceiling = 0x40000000 >> 4;     // the declared peak, half of full scale, before the shift
 const u32 fastest = 0x40000000u;         // increments capped at a quarter of the sample rate
 const u32 c4 = 25477629u;                // the increment of middle C (261.6 Hz), where the filter's keyboard tracking pivots
 const u32 chorus_rate = 5609753u;        // the chorus clock's increment a block: 0.9 Hz
@@ -358,7 +359,7 @@ struct Stereo { i32 coefficient[2], dry[2], wet[2]; };
 // Mono: both sides the same, the layers summed.
 __attribute__((noinline)) static void mono(const i32* __restrict a, const i32* __restrict b, opxy::Output out) {
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
-        const i32 y = clamp(multiply(a[i] + b[i], output_gain), -ceiling, ceiling) * 8;
+        const i32 y = clamp(multiply(a[i] + b[i], output_gain), -ceiling, ceiling) * 16;
         out[2 * i] = y;
         out[2 * i + 1] = y;
     }
@@ -370,8 +371,8 @@ __attribute__((noinline)) static void spread(const i32* __restrict a, const i32*
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
         const i32 ai = a[i], bi = b[i];
         const i32 side = multiply(ai - bi, half_spread), sum = ai + bi;
-        out[2 * i] = clamp(multiply(sum + side, output_gain), -ceiling, ceiling) * 8;
-        out[2 * i + 1] = clamp(multiply(sum - side, output_gain), -ceiling, ceiling) * 8;
+        out[2 * i] = clamp(multiply(sum + side, output_gain), -ceiling, ceiling) * 16;
+        out[2 * i + 1] = clamp(multiply(sum - side, output_gain), -ceiling, ceiling) * 16;
     }
 }
 
@@ -389,7 +390,7 @@ __attribute__((noinline)) static void chorus_side(const i32* __restrict a, const
         const i32 s1 = multiply(coefficient, x - y1) + x0;
         const i32 s2 = multiply(coefficient, s1 - y2) + y1;
         x0 = x; y1 = s1; y2 = s2;
-        out[2 * i] = clamp(multiply(x, dry) + multiply(s2, wet), -ceiling, ceiling) * 8;
+        out[2 * i] = clamp(multiply(x, dry) + multiply(s2, wet), -ceiling, ceiling) * 16;
     }
     pass[0] = x0; pass[1] = y1; pass[2] = y2;
 }

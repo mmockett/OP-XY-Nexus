@@ -493,7 +493,7 @@
     "voiceAlignment": 4,
     "voiceCapacity": 8,
     "sharedBytes": 12,
-    "outputPeakQ31": 805306368,
+    "outputPeakQ31": 1073741824,
     "stereoOutput": 1,
     "display": {
       "stateBytes": 84,

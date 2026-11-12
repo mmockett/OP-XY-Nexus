@@ -9,7 +9,7 @@ using opxy::i32;
 using opxy::u32;
 const unsigned frames = opxy::block_frames;
 const unsigned controls = 16;  // two pages of four and the Shift row under them
-const i32 peak = 0x30000000;   // definition.json's outputPeakQ31
+const i32 peak = 0x40000000;   // definition.json's outputPeakQ31, half of full scale
 
 i32 word(double v) { return v <= 0 ? 0 : v >= 1 ? 0x7fffffff : static_cast<i32>(v * 2147483647.0); }
 // A Shift row amount's word, as the OP-XY plays it: whole steps 0..100, step / 100 of full scale.
@@ -130,19 +130,24 @@ int main() {
         const Result r = play(presets[k].c, one, 1, 1400);
         const double rms = r.held_count ? std::sqrt(r.held / r.held_count) : 0;
         if (k == 0) tyrell_rms = rms;
+        const double db = 20 * std::log10((rms + 1e-12) / tyrell_rms);
         std::printf("%-13s one note peaks at %.3f / %.3f, RMS %.4f (%+.1f dB against Tyrell)\n", presets[k].name,
-                    r.peak_left, r.peak_right, rms, 20 * std::log10((rms + 1e-12) / tyrell_rms));
+                    r.peak_left, r.peak_right, rms, db);
+        // none far quieter than Tyrell; the basses' RMS reads loud for how loud they sound
+        expect(db > -3 && db < 6.5, "a preset's note is far quieter or louder than Tyrell's");
     }
-    // Every preset sounds, stays under the declared peak, and an eight-note chord sits near Hexagon's levels.
+    // Every preset sounds, a voice stays under the declared peak, and an eight-note chord sums near the suite's
+    // other synths at half scale (Mach, Sand, Hollow).
     for (unsigned k = 0; k < preset_count; ++k) {
         const Result r = play(presets[k].c, chord, 8, 1400);
         std::printf("%s: chord of 8 peaks at %.2f / %.2f of full scale, a voice at %.3f\n", presets[k].name,
                     r.peak_left, r.peak_right, r.voice_peak);
         expect(r.energy > 0, "a preset is silent");
         expect(r.bounded, "a voice above the declared peak");
-        expect(r.voice_peak < 0.375, "a preset's voice reaches the ceiling");
-        expect(r.peak_left < 1.0 && r.peak_right < 1.0, "a chord clips");
-        expect(r.peak_left > 0.2, "a chord is far quieter than the suite");
+        expect(r.voice_peak < 0.48, "a preset's voice reaches the ceiling");
+        // A test sum: the OP-XY mixes its voices with headroom of its own, so a sum over 1.0 here isn't clipping.
+        expect(r.peak_left < 2.0 && r.peak_right < 2.0, "a chord sums far over full scale");
+        expect(r.peak_left > 0.5, "a chord is far quieter than the suite");
     }
     // The extremes stay bounded, the Shift row's with them.
     for (int corner = 0; corner < 65536; corner += 4369) {
