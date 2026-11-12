@@ -2,10 +2,10 @@
 
 A two-layer polysynth for the OP-XY, after the Yamaha CS-80, built with the
 [Open-XY SDK](https://github.com/etcetc000/open-xy). Every note is two
-complete synths played together, a few cents apart, each with its own
-resonant filter. Touch makes a held note swell like brass, ribbon slides
-each note in, ring modulation turns it to bells, and the CS-80's own chorus
-moves it across the stereo field.
+complete synths played together, a few cents apart, each with its own pair
+of resonant filters. Swell makes a held note bloom like brass, bite gives it
+the CS-80's bright blip, ring modulation turns it to bells, and the CS-80's
+own chorus moves it across the stereo field.
 
 **Status: experimental.** Nexus has not yet been played on an OP-XY, and its
 CPU figures are estimates.
@@ -13,19 +13,27 @@ CPU figures are estimates.
 ## The sound
 
 Each voice plays layer I and layer II, as the CS-80 plays its channels I and
-II. Each layer is a band-limited oscillator that morphs from sine through saw
-and square to a narrow pulse, into its own 12 dB resonant low-pass. The two
-layers play the same wave a few cents apart, so they drift in and out of
+II. In each layer a band-limited saw and pulse sound together, mixed by
+shape, and the pulse's width moves slowly, each layer at its own rate. The
+layer runs through a 12 dB resonant high-pass (lowcut) and a 12 dB resonant
+low-pass (bright) in series. Reso sets both resonances, the high-pass's a
+little lower, so with the two cutoffs close together the layer has two peaks,
+like a voice. After both filters a sine joins at the layer's pitch (sine),
+in phase with the saw's fundamental, for weight under a dark filter or, alone,
+for bells. The two layers play a few cents apart, so they drift in and out of
 phase; layer I carries a breath of noise, and layer II, at its own footage,
-can be ring-modulated. Every voice wanders a little in pitch and tone.
+can be ring-modulated after its filters.
 
-The OP-XY has no aftertouch or ribbon, so Nexus plays their parts itself.
-**Touch** leans into each held note: the filter starts dark and swells over
-about a second to nearly three times its resting brightness, the resonance
-rising with it, and stays bright while the note sounds. A vibrato arrives a
-moment later. Each voice does this a little differently, so a chord opens
-unevenly, as it does under ten fingers. **Ribbon** slides each note in from up
-to an octave below or above.
+The OP-XY has no aftertouch, so Nexus plays the CS-80's filter envelope
+itself, on both filters at once. **Swell** leans into each held note: the
+filter starts dark and blooms over about a second to nearly three times its
+resting brightness, the resonance rising with it, and stays bright while the
+note sounds. A vibrato arrives a moment later. Each voice does this a little
+differently, so a chord opens unevenly, as it does under ten fingers.
+**Bite** starts each note bright, up to three octaves over the resting
+cutoff, and drops it to the swell's dark start in a fifth of a second: the
+CS-80's brass blip. When a key is let go the filter closes towards the dark
+start, so notes darken as they fade.
 
 **Chorus** is the CS-80's stereo stage: the level sways between left and
 right while a phase shift sweeps, like a rotating speaker, on one clock for
@@ -35,37 +43,41 @@ to the mono voice. With both at 0 Nexus is mono, and both sides are the same
 voice.
 
 **Page 1:** shape, detune, bright, reso<br>
-**Page 2:** chorus, ring, touch, ribbon<br>
-**Shift:** balance, octave, lowcut, noise under page 1; spread, ratio, drift,
-slide under page 2. Hold Shift and turn the encoder above.
+**Page 2:** chorus, ring, swell, bite<br>
+**Shift:** sine, octave, lowcut, noise under page 1; balance, ratio, spread,
+drift under page 2. Hold Shift and turn the encoder above.
 
 | Control | 0 | 25 | 50 | 75 | 100 |
 | --- | --- | --- | --- | --- | --- |
-| shape | sine | sine into saw | saw into square | square, narrowing | 12% pulse |
+| shape | saw | saw and pulse | pulse, saw fading | square, narrowing | 12% pulse |
 | detune (layer II against I) | 0c | 4c | 11c | 19c | 30c |
 | bright (both low-passes) | 80 Hz | 300 Hz | 1.1 kHz | 4.3 kHz | 16 kHz |
-| reso | none | slight | a peak | strong | ringing |
+| reso (both filters) | none | slight | a peak | strong | ringing |
 | chorus (sway, sweep, spread) | mono | gentle | wide | deep | full rotation |
 | ring (amount) | off | 25% | 50% | 75% | full |
-| touch (swell, rise) | none | 1.6x in 0.4 s | 2.2x in 0.6 s | 2.7x in 0.9 s | 3.3x in 1.1 s |
-| ribbon (slide in from) | -12st | -6st | 0st | +6st | +12st |
+| swell (start, crescendo, rise) | none | 0.8x to 1.6x in 0.4 s | 0.6x to 2.2x in 0.6 s | 0.4x to 2.7x in 0.9 s | 0.15x to 3.3x in 1.1 s |
+| bite (start against rest, at swell 80) | none | -0.5 octave | +0.7 octave | +1.8 octaves | +3 octaves |
 
 | Shift | 0 | 25 | 50 | 75 | 100 |
 | --- | --- | --- | --- | --- | --- |
-| balance (under shape) | layer I | II 8 dB down | even | I 8 dB down | layer II |
-| lowcut (under bright, both layers) | off | 63 Hz | 200 Hz | 630 Hz | 2 kHz |
+| sine (under shape, after the filters) | none | 25% | 50% | 75%, filters at half | the sine alone |
+| lowcut (under bright, both high-passes) | off | 63 Hz | 200 Hz | 630 Hz | 2 kHz |
 | noise (under reso, breath in layer I) | none | breathy | airy | hiss | strong hiss |
-| spread (under chorus, I left, II right) | mono | 2 dB apart | 4 dB | 7 dB | 10 dB |
-| drift (under touch, pitch and tone) | steady | 0.09st | 0.18st | 0.27st | 0.36st |
-| slide (under ribbon, the ribbon's slide in) | 0.02 s | 0.06 s | 0.17 s | 0.51 s | 1.5 s |
+| balance (under chorus) | layer I | II 8 dB down | even | I 8 dB down | layer II |
+| spread (under swell, I left, II right) | mono | 2 dB apart | 4 dB | 7 dB | 10 dB |
+| drift (under bite, pitch and tone) | steady | 0.09st | 0.18st | 0.27st | 0.36st |
 
-**Octave** (under detune) sets layer II's footage: 16', 8', 4' or 2', so the
-second layer can sit an octave under the first or above it. **Ratio** (under
-ring) sets the ring modulator's pitch against layer II: 0.5, 1, 1.5 (a fifth),
-2, 2.6, 3, 3.5 or 4. Whole numbers stay in tune; 2.6 and 3.5 ring like bells.
-The defaults are balance 50, octave 8', lowcut off, noise 6, spread 40, ratio
-1.5, drift 25 and slide 30. Sounds saved before the Shift row play these, so
-one saved with ring above 25 now rings at a fifth until ratio is set.
+Swell's start and crescendo are times the resting cutoff. Bite's start lies
+between the swell's dark start (1.6 octaves under rest at swell 80) and three
+octaves over rest; it falls back in 0.07 s plus 0.15 s times swell. With
+swell at 0 there is no dark start, and bite falls to rest in 0.07 s. Both
+cutoffs follow the key, the swell and bite together, so lowcut moves with
+them. **Octave** (under detune) sets layer II's footage: 16', 8', 4' or 2',
+so the second layer can sit an octave under the first or above it.
+**Ratio** (under ring) sets the ring modulator's pitch against layer II: 0.5,
+1, 1.5 (a fifth), 2, 2.6, 3, 3.5 or 4. Whole numbers stay in tune; 2.6 and
+3.5 ring like bells. The defaults are sine 0, octave 8', lowcut off, noise 6,
+balance 50, ratio 1.5, spread 40 and drift 25.
 
 ## Presets
 
@@ -97,11 +109,12 @@ The OP-XY's filter (M3) and LFO (M4) are off in every preset.
 | Blip Brass | brass | Brass stabs with the CS-80's blip: every note bright for an instant, a dip, then a short swell, over a resonant low end | 0.01 s / 0.51 s / 85% / 0.3 s | 35, 0 | 4.5% |
 <!-- /presets -->
 
-Falls at the ends of phrases come from the OP-XY's pitch bend. The CPU column
-is estimated, as under CPU below. Pads play many voices, so most stay near
-Tyrell's cost. Four presets cost more than 4.5% a voice: Glass Choir, which
-blends sine and saw and rings, and Ember, Long Strings and Rise Lead, whose
-shape is past the saw, where the square's work starts.
+Falls at the ends of phrases and slides into notes come from the OP-XY: its
+pitch bend, and the sequencer's slides. The CPU column is estimated, as under
+CPU below. Pads play many voices, so most stay near Tyrell's cost. Those over
+4.5% a voice run lowcut or sine on both layers (Neon Rain, Sodium Haze, High
+Rise, Vapor Choir), saw and pulse together (Ember), or the sine past 50 with
+ring (Glass Choir).
 
 ## The screen
 
@@ -130,15 +143,18 @@ compiled sound loops, at 1.3 to 1.5 cycles an instruction, plus about 1.5% of
 the block for the OP-XY's own share of a voice. Only a measurement on the
 OP-XY gives a real figure.
 
-| Setting | Per voice, % of the block |
-| --- | --- |
-| Tyrell with chorus 0 and spread 0 (mono) | 3.2 to 3.5 |
-| Tyrell | 3.9 to 4.2 |
-| Pulse, ring and chorus up | 4.9 to 5.4 |
-| Shape between sine and saw, ring and chorus up | 5.3 to 5.9 |
-| Heaviest: that, with balance off centre and lowcut on | 5.5 to 6.2 |
+| Setting | Instructions a sample | Per voice, % of the block |
+| --- | --- | --- |
+| Tyrell with chorus 0 and spread 0 (mono) | 88 | 3.1 to 3.3 |
+| Tyrell | 132 | 3.9 to 4.1 |
+| Tyrell with lowcut on | 160 | 4.3 to 4.7 |
+| Sine alone (Toy Bells) | 66 | 2.7 to 2.8 |
+| Saw and pulse, lowcut, sine up to 50, chorus | 239 | 5.8 to 6.3 |
+| Heaviest: that with sine past 50, ring and balance off centre | 273 | 6.4 to 7.0 |
 
-Lowcut, noise, spread and drift cost nothing at 0, nor balance at 50.
+Swell, bite, the release and the pulse's movement cost nothing a sample.
+Lowcut, sine, noise, ring, spread and drift cost nothing at 0, nor balance at
+50; sine at 100 skips both filters and the saw.
 
 ## Building
 

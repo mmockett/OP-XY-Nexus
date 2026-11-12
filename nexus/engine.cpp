@@ -146,8 +146,8 @@ static inline i32 smooth(i32 u) {
 
 // ------------------------------------------------------------------ one layer
 // The source: the saw alone, or the saw and a pulse together (a saw less a
-// second saw `width` ahead), or, at sine 100, the sine alone.
-enum Mode { saw_only, saw_pulse, sine_alone };
+// second saw `width` ahead). At sine 100 the sine plays alone (sine_layer).
+enum Mode { saw_only, saw_pulse };
 struct Wave { Mode mode; i32 saw, pulse, centre; };   // Q15 levels, and the pulse's centre width (Q16 of a cycle)
 // shape 0 is the saw; the pulse fades in beside it to 40, the saw fades out to
 // 70 (a square), then the pulse narrows to 12% at 100. Where both sound their
@@ -166,7 +166,7 @@ static inline Wave wave_of(i32 s) {
         ws = 32768;
         wp = (s * 5) >> 1;
     } else if (s <= 22938) {                                           // 40..70
-        ws = 32768 - (((s - 13107) * 10) / 3);
+        ws = clamp(32768 - (((s - 13107) * 10) / 3), 0, 32768);
         wp = 32768;
     } else {                                                           // 70..100
         ws = 0;
@@ -298,7 +298,6 @@ __attribute__((noinline)) static void add_sine(i32* __restrict out, u32 phase, u
 static inline void finish_layer(i32* out, bool high, const Filter& h, i32* state, u32 phase, u32 step, i32 fade,
                                 i32 level) {
     if (high) high_pass(out, h, state);
-    else state[0] = state[1] = 0;
     if (level) {
         if (fade < (1 << 30)) add_sine<true>(out, phase, step, fade, level);
         else add_sine<false>(out, phase, step, fade, level);
@@ -617,6 +616,8 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output,
             finish_layer(a, high, h1, voice.high, from_one, one.step, fade, sine_amount);
             finish_layer(b, high, h2, voice.high + 2, from_two, two.step, fade, sine_amount);
         }
+        if (!high)
+            for (unsigned k2 = 0; k2 < 4; ++k2) voice.high[k2] = 0;
     }
     voice.phase[0] = one.phase;
     voice.phase[1] = two.phase;
