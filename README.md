@@ -120,13 +120,14 @@ ring (Glass Choir).
 
 A dense isometric city in greys, drawn like pixel art: an elevated monorail
 crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
-tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
-with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
-fans, plant rooms and windows down every face, tall ones two floors high and,
-on the helipad and the towers round its foot, small ones. Looking down on it
-there is no sky: behind the near city, far towers, some stepped to a spire and
-some rising out of the picture, fill every gap, over the dark streets of the
-city below. Tops are light, sides mid and dark.
+tower, a poster of the sun rising over water, a dot-matrix hourglass, a neon
+BAR sign hanging off a tower, a helipad with a flying car, masts and spires
+with aircraft warning lights, a dish, a ball tower, rooftop fans and duct fans,
+plant rooms and windows down every face, tall ones two floors high and, on the
+helipad and the towers round its foot, small ones. Looking down on it there is
+no sky: behind the near city, far towers, some stepped to a spire and some
+rising out of the picture, fill every gap, over the dark streets of the city
+below. Tops are light, sides mid and dark.
 
 The windows light a few at a time, in a scattered order, never a column at
 once. Behind the near city hangs one sheet of fog, over the far towers and
@@ -135,22 +136,28 @@ stays sharp in front of it.
 
 At rest the city is still. While a note is held, a two-car train runs along
 the monorail, passing behind the nearer towers and coming round again; tiny
-cars drive both ways along the road below, the fans turn smoothly, the dish
-swings, the flying car bobs and the lights blink. When the note ends,
-everything eases to a stop where it is.
+cars drive both ways along the road below, the fans turn, the dish swings, the
+flying car hovers, the lights blink and the warning lights pulse slowly. When
+the note ends, everything eases to a stop where it is.
 
 | Control | What it changes |
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
 | bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: the far city is dark. As it rises, the fog thickens to nearly white, and more windows and background lights come on |
-| reso | The advert, the billboards and the neon edges brighten |
+| reso | The advert, the billboards, the neon sign and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |
 | swell | How many dark windows glow with each note, and the advert's pattern pulses while it's held. The glow follows the track's amp envelope: up over its attack, down to its sustain, out over its release, through the greys between |
 | bite | How high the flying car hovers over the helipad: at 0 it has landed |
 | sine (Shift) | The two lines under the advert's pattern, short to long |
+| octave (Shift) | The ball slides along the ball tower's spire, its rings with it: low at 16', high at 2' |
 | lowcut (Shift) | The sun poster's reflection on the water clears stripe by stripe from the bottom up |
+| noise (Shift) | The neon sign flickers while a note is held: now and then at low settings, often and in pieces near 100. At 0 it's steady |
+| balance (Shift) | The two fans on the right-hand block, layer I's and layer II's: equal at 50; toward 0 layer II's slows almost to a stop, toward 100 layer I's |
+| ratio (Shift) | Where the dish points: a different angle for each of its eight steps |
+| spread (Shift) | The road's traffic: two cars at 0, more as it rises, eight at 100 |
+| drift (Shift) | The flying car's wobble while it hovers and a note is held: a slow, small bob, sway and tilt. At 0 it holds steady |
 
 With a note, each glowing window brightens a little after the one before:
 dark at the note's start, rising through the greys during the attack, white
@@ -158,8 +165,8 @@ at the peak, settling to the sustain's level and fading back to dark over the
 release. When the OP-XY can't report the envelope, the windows flare one by
 one while the note is held, as before.
 
-While Shift is held, the header's bright row shows the Shift controls. Sine's
-lines and lowcut's reflection follow them whether or not Shift is held.
+While Shift is held, the header's bright row shows the Shift controls. The
+city follows the Shift controls whether or not Shift is held.
 
 ## CPU
 

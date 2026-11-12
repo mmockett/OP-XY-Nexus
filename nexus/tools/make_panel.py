@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Nexus's screen: a dense isometric city in greys, drawn like pixel art, with a
-monorail train on an elevated track, an OP-XY advert tower, billboards, a
-helipad, masts, a dish, a ball tower, rooftop fans and a road with tiny cars.
+monorail train on an elevated track, an OP-XY advert tower, billboards, a neon
+blade sign, a helipad, masts with aircraft warning lights, a dish, a ball tower,
+rooftop fans and a road with tiny cars.
 
 Writes ../panel.svg.fragment (the artwork), ../city.h (the tables display.cpp
 reads) and ../tests/outlines.h (each node's outline measures, for the host
@@ -9,12 +10,13 @@ checks), from one description, so they always agree. With --preview <dir> it
 also draws a few states as SVG, through a mirror of display.cpp's frame logic,
 for looking at the picture without building anything.
 
-    python3 tools/make_panel.py [--preview <dir>] [--compact nospace,implicit,relative] [--round ellipse]
+    python3 tools/make_panel.py [--preview <dir>] [--compact nospace,implicit,relative] [--round paths]
 
---compact writes shorter path syntax the OP-XY hasn't been seen to load yet (path_d() says which), and
---round ellipse the roof's circles (the helipad's ring, the fans' rims, wells and hubs) as SVG ellipse
-elements, also not yet seen on it, each for a build meant to test it; the artwork kept in the repository
-is written without them.
+Round still parts (the helipad's ring, the fans' rims, wells and hubs) are SVG ellipse elements, and the
+ball tower's ball, sheen and glint bound SVG circles (the SDK's own node form). --round paths writes the
+ellipses as outlines of points instead, the way round parts were before ellipses were tried on the OP-XY, in
+case its loader draws them wrongly: one regenerate undoes them. --compact writes shorter path syntax the OP-XY hasn't been seen
+to load yet (path_d() says which), for a build meant to test it.
 
 Pure Python with shapely 2.2.0 (a prebuilt wheel); nothing is compiled.
 
@@ -55,9 +57,22 @@ STAGE = rect(0, TOP, 480, BOTTOM)
 BUDGET = 200                      # display.cpp's budget: points of changed outlines a frame
 TRAIN_REACH = 320                 # px either way the train can be from home (for the depth order)
 CRAFT_RISE = 30                   # px the craft rises at bite 100 (display.cpp's rise)
+CRAFT_BOB, CRAFT_SWAY, CRAFT_TILT = 2, 1.5, 3   # drift 100's wobble: px up and down, px across, degrees (display.cpp's)
+# Octave's steps (16', 8', 4', 2'): where the ball sits on the ball tower's spire, px down from where it rests at 8'.
+BALL_STEPS = (6, 0, -6, -12)
+BALL_TRACE = 16                   # points tracing the ball's circles: for the depth order, the checks and their cost
+# Ratio's eight steps: where the dish points, tenths of a degree clockwise (display.cpp's dish_angle).
+DISH_ANGLES = tuple(-350 + 100 * k for k in range(8))
+DISH_SWAY = 4                     # and how far it swings either way while notes are held, degrees
+VANE_POSES = 3                    # the duct fans' blade poses
 # The road's cars: lane (world x), way (1 up the road to the right, -1 down it toward the viewer), speed
-# px a second along screen x, where it is drawn (world y), and where it is on its run at rest (px).
-ROAD_CARS = [(218.9, 1, 14, -150, 40), (223.15, 1, 11, -150, 170), (227.4, -1, 12, -150, 90), (230.9, -1, 16, -150, 220)]
+# px a second along screen x, where it is drawn (world y), where it is on its run at rest (px), and its rank:
+# spread shows the cars ranked under 2 + 6 x spread, two at 0 and all eight at 100 (display.cpp's traffic()).
+# A lane's cars share its speed, so they never meet.
+# At rest each is where it shows, in one of the two gaps between the towers in front of the road.
+ROAD_CARS = [(218.9, 1, 14, -150, 51, 0), (223.15, 1, 11, -150, 152, 2), (227.4, -1, 12, -150, 116, 1),
+             (230.9, -1, 16, -150, 18, 3), (218.9, 1, 14, -150, 151, 5), (223.15, 1, 11, -150, 37, 4),
+             (227.4, -1, 12, -150, 16, 6), (230.9, -1, 16, -150, 123, 7)]
 SAND = 1                          # the hourglass's dots: near black against its panel (12..15) at every reso
 # The hourglass's dot matrix, in its face's units (1 px across): SAND_COLS columns of dots SAND_DOT square,
 # SAND_PITCH apart, from SAND_U0 across and SAND_W0 down; the panel's grey covers the SAND_GAP between them.
@@ -114,12 +129,15 @@ assert FOG_DONOR + len(FOG_ALPHA) == 16
 # pales as the fog thickens and the near city stays crisp. Bright sets its opacity; at 0 it is hidden, a
 # dark far city. Only what is seen of it is drawn (compose() cuts it), as one outline.
 FOG_POINTS = 40                   # the sheet's outline, at most
-# Round things drawn as SVG circles: the OP-XY's SVG loader knows circle and ellipse (with cx, cy, r, rx
-# and ry), and still circles with a plain fill or stroke have drawn on it (Orbit's dots, Bend's and Recur's
-# rings). An ellipse element hasn't been seen on it yet, so the roof's circles, which are level ellipses
-# twice as wide as tall, stay outlines of points unless asked for (--round ellipse), for a build meant to
-# test it.
-ROUND = set()
+# Round things drawn as SVG circles and ellipses: the OP-XY's SVG loader knows circle and ellipse (with cx,
+# cy, r, rx and ry), and still circles with a plain fill or stroke have drawn on it (Orbit's dots, Bend's and
+# Recur's rings). The roof's circles are level ellipses twice as wide as tall, written as ellipse elements:
+# this artwork is the first on the device to use them. --round paths writes them as outlines of points, as
+# before, in case the device draws them wrongly. A round part that moves or restyles is a bound node, and a
+# bound node is a path or a circle (the SDK's docs/display.md): the ball, seen face-on and only moved, is
+# three bound circles; the rest can't be circles and stay outlines of points: the ring halves are arcs, the
+# dish and its rings are tilted ellipses that turn, the craft's shadow is squashed, and the fans' blades reshape.
+ROUND = {"ellipse"}
 ROUND_TRACE = 48                  # points tracing a round element, for the depth order and what it hides
 
 
@@ -392,7 +410,7 @@ def disc(f, cu, cv, r, n=12):
     return [f(cu + r * math.cos(2 * math.pi * k / n), cv + r * math.sin(2 * math.pi * k / n)) for k in range(n)]
 
 
-def strokes(lines, width):
+def strokes(lines, width, ease=0.01):
     """A glyph from its strokes (face units), as one outline; a hole gets a slit at its foot."""
     from shapely.geometry import LineString
     g = shapely.union_all([LineString(l).buffer(width / 2, cap_style="square", join_style="mitre") for l in lines])
@@ -401,7 +419,7 @@ def strokes(lines, width):
         hx = (min(p[0] for p in hole.coords) + max(p[0] for p in hole.coords)) / 2
         hy = max(p[1] for p in hole.coords)
         g = g.difference(rect(hx - 0.2, hy - 0.5, hx + 0.2, hy + width + 1))
-    g = shapely.simplify(g, 0.01)
+    g = shapely.simplify(g, ease)
     return [(round(u, 2), round(v, 2)) for u, v in list(g.exterior.coords)[:-1]]
 
 
@@ -435,6 +453,16 @@ GLYPHS = {   # 6 wide, 9 tall, strokes 1.6 wide (face units)
     "Y": [[(0.8, 0.8), (3, 4.6)], [(5.2, 0.8), (3, 4.6)], [(3, 4.6), (3, 8.2)]],
 }
 GLYPH_WIDTH = {"O": 6, "P": 6, "-": 4, "X": 6, "Y": 6}
+# The neon blade sign's word, down the blade, its letters' strokes thinner than the advert's (face units).
+SIGN_WORD = "BAR"
+SIGN_STROKE, SIGN_GAP, SIGN_DEPTH = 1.3, 2.2, 8
+SIGN_HEIGHT = 6 + len(SIGN_WORD) * (9 + SIGN_GAP)
+SIGN_TOP = 6                      # how far under its tower's roof the sign hangs
+SIGN_GLYPHS = {
+    "B": [[(0.8, 9), (0.8, 0.8), (4.4, 0.8), (4.4, 4.5)], [(0.8, 4.5), (5.2, 4.5), (5.2, 8.2), (0.8, 8.2)]],
+    "A": [[(0.8, 9), (0.8, 2), (1.8, 0.8), (4.2, 0.8), (5.2, 2), (5.2, 9)], [(0.8, 5), (5.2, 5)]],
+    "R": [[(0.8, 9), (0.8, 0.8), (5.2, 0.8), (5.2, 4.8), (0.8, 4.8)], [(3.4, 4.8), (5.2, 9)]],
+}
 
 
 # ------------------------------------------------------------------ the city
@@ -489,7 +517,8 @@ class City:
 
     def __init__(self):
         SOLIDS.clear()
-        self.masts, self.lights, self.fans, self.rings = [], [], [], []
+        self.masts, self.lights, self.fans, self.rings, self.warnings = [], [], [], [], []
+        self.ducts = 0
 
     # windows: in columns down a face, tall ones two floors high (a thin band between rows, SPANDREL) or,
     # on a few towers, the original small ones (a wider band). Each column is cut into short lit
@@ -624,13 +653,20 @@ class City:
                    tone)
         for cy, rx, ry, slot in hoops:
             self.ring(owner, x, cy, rx, ry, 4, 2, slot, False)
-        self.lights.append((owner, x, y - h - 0.6, 1.3, phase))
+        # its warning light at its tip, or where it rises into the header, as high up it as is seen
+        self.warnings.append((owner, x, max(y - h - 0.6, TOP + 5), 1.3, phase))
+
+    def housing(self, owner, bx, cu, cv, r):
+        """A fan's housing on a roof: its dark well, and its rim, a ring stroked over the well's edge (an
+        ellipse is filled whole on the device, so a filled rim under the well would be paid for twice; as
+        outlines, a ring is one outline where a disc with the well cut from it would be two)."""
+        owner.roof_disc(bx.T, cu, cv, r + 0.4, 14, 1)
+        owner.roof_disc(bx.T, cu, cv, r + 0.9, 14, 9, 1.0)
 
     def fan(self, owner, bx, cu, cv, r):
         """An extractor fan on a roof: its rim and dark well, three blades as one reshaping outline that
         display.cpp turns in the roof's plane, and a hub."""
-        owner.roof_disc(bx.T, cu, cv, r + 1.4, 20, 9)
-        owner.roof_disc(bx.T, cu, cv, r + 0.4, 20, 1)
+        self.housing(owner, bx, cu, cv, r)
         k = len(self.fans)
         cx, cy = bx.T(cu, cv)
         origin = (math.floor(cx), math.floor(cy))
@@ -638,8 +674,26 @@ class City:
         pts = [(x + cx, y + cy) for x, y in blades(r - 0.6, 0.0)]
         owner.node(pts, kind="path", path=FAN_PATHS[k], tone=9, outline=True, pivot=origin, exact=True,
                    fan=(centre, r - 0.6), reach=disc(bx.T, cu, cv, r, 16))
-        owner.roof_disc(bx.T, cu, cv, 1.3, 8, 10)
+        owner.roof_disc(bx.T, cu, cv, 1.3, 6, 10)
         self.fans.append(k)
+
+    def duct(self, owner, bx, cu, cv, r):
+        """A smaller duct fan: its housing, and its blades in VANE_POSES still poses a third of a pose's turn
+        apart, one shown at a time (display.cpp steps through them while notes are held, which reads as the
+        blades turning, for a node or two a step instead of a reshaping outline every frame), and a hub."""
+        self.housing(owner, bx, cu, cv, r)
+        j = self.ducts
+        cx, cy = bx.T(cu, cv)
+        origin = (math.floor(cx), math.floor(cy))
+        for pose in range(VANE_POSES):
+            pts = [(x + cx, y + cy) for x, y in blades(r - 0.6, pose / (3 * VANE_POSES))]
+            owner.node(pts, kind="vane", param=j * 4 + pose, tone=9, low=9, high=9, outline=True, pivot=origin,
+                       lead=pose == 0)
+        owner.roof_disc(bx.T, cu, cv, 1.1, 6, 10)
+        self.ducts += 1
+
+
+CITY_DUCTS = [0]
 
 
 def city():
@@ -658,9 +712,10 @@ def city():
         bx = tower(fx, fy, a, b, -1200 + k * 12)
         h = solid(f"haze{k}", bx)
         h.faces(HAZE)
-        if k in (6, 11):                  # a needle on the roof
+        if k in (6, 11):                  # a needle on the roof, a warning light at its tip
             mx, my = bx.T(a / 2, b / 2)
             h.fill([(mx - 0.9, my + 0.5), (mx - 0.3, my - 14), (mx + 0.3, my - 14), (mx + 0.9, my + 0.5)], 4)
+            C.warnings.append((h, mx, my - 14.8, 1.1, 60 + 37 * k))
         if spire:
             for step in range(2):
                 sb = Box(bx.x0 + 2 + 2 * step, bx.x1 - 2 - 2 * step, bx.y0 + 2 + 2 * step, bx.y1 - 2 - 2 * step,
@@ -668,6 +723,7 @@ def city():
                 h.faces_of(sb, HAZE)
             mx, my = bx.T(a / 2, b / 2)
             h.fill([(mx - 1.2, my - 11), (mx - 0.3, my - 26), (mx + 0.3, my - 26), (mx + 1.2, my - 11)], 4)
+            C.warnings.append((h, mx, my - 26.8, 1.1, 10 + 53 * k))
         h.fill(quad(bx.L, 2, 7, a - 4, 1.5), 6)
         for r in range(2):
             h.node(quad(bx.L, 2, 15 + r * 8, a - 4.5, 1), kind="glow", low=2, high=14,
@@ -714,6 +770,7 @@ def city():
     # E: a dark tower beyond the advert tower
     s, bx = C.building("E", 312, 46, 24, 26, -150, (9, 6, 3))
     C.cornice(s, bx, 3, 10)
+    C.warnings.append((s, *bx.T(bx.a - 1, bx.b - 1), 1.1, 175))
     g(s, bx.L, 3, 7, 3, 3.5, 7, 11, 6, 14, 420)
     g(s, bx.R, 3, 7, 3, 3.5, 8, 11, 3, 13, 440)
 
@@ -754,6 +811,7 @@ def city():
     t.node([tw.L(46.3, 3), tw.L(47, 3), tw.L(47, 98), tw.L(46.3, 98)], kind="neon", low=5, high=15, tone=12)
     for k, (uu, vv, hh) in enumerate([(8, 6, 44), (36, 4, 50), (40, 30, 36)]):
         C.mast(t, *tw.T(uu, vv), hh, rings=k != 1, phase=k * 80)
+    C.duct(t, tw, 33, 15, 4.5)
 
     # small blocks right of the advert tower
     s, bx = C.building("F", 302, 100, 22, 26, -110, FAR)
@@ -764,28 +822,33 @@ def city():
     g(s, bx.L, 3, 6, 3, 3, 6.5, 6, 7, 14, 380, band=3.6, seg=5)
     C.box_on("V0", bx, 4, 3, 7, 6, 5)
 
-    # The ball tower: a lattice stem, a ball with a band, a spire
+    # The ball tower: a lattice stem, a spire on up through it, and a ball with a band that octave slides along
+    # the spire (BALL_STEPS, from 16' at the foot to 2' at the top), its rings with it. The ball's parts are
+    # bound nodes: the ball, its sheen and its glint circles, each seen face-on and only moved.
     bb = tower(364, 108, 16, 12, -150)
     s = solid("ballbase", bb)
     s.faces(FAR)
     sx_, sy_ = bb.T(8, 6)
-    ball = solid("ball", Box(bb.x0 + 6, bb.x0 + 10, bb.y0 + 4, bb.y0 + 8, bb.z1, bb.z1 + 50))
-    bcx, bcy = sx_, sy_ - 42
+    ball = solid("ball", Box(bb.x0 + 6, bb.x0 + 10, bb.y0 + 4, bb.y0 + 8, bb.z1, bb.z1 + 80))
+    bcx, bcy = sx_, sy_ - 42                         # the ball at rest, at 8'
     hoops = [(12, 3.6, 0), (15.5, 4.6, 1)]          # the rings round the ball: their back halves first
+    slide = [(0, min(BALL_STEPS)), (0, max(BALL_STEPS))]
+
+    def orb(pts, tone, lead=False, **spec):
+        ball.node(pts, kind="orb", tone=tone, keep=True, pivot=(round(bcx), round(bcy)), sweep=slide, lead=lead, **spec)
     for rx, ry, slot in hoops:
-        C.ring(ball, bcx, bcy, rx, ry, 6, 3, slot, True)
+        orb(arc(bcx, bcy, rx, ry, 6, True, 3), 11, lead=slot == 0, param=4 + slot, low=7, high=14)
     ball.fill([(sx_ - 3, sy_ + 1), (sx_ - 2, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 1)], 4)
     ball.fill([(sx_ + 0.6, sy_ + 0.5), (sx_ + 0.6, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 0.5)], 2, occ=True)
     for k in range(4):
         ball.fill([(sx_ - 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 5 - 7 * k),
                    (sx_ - 2.6, sy_ - 5 - 7 * k)], 6)
-    ball.round(bcx, bcy, 8, 8, 4)                    # the ball, its sheen and its glint: SVG circles
-    ball.round(bcx - 2, bcy - 2.2, 4.6, 4.6, 7)
-    ball.round(bcx - 3, bcy - 3.4, 1.6, 1.6, 10)
-    ball.fill([(bcx - 8, bcy - 0.5), (bcx + 8, bcy - 0.5), (bcx + 8, bcy + 0.7), (bcx - 8, bcy + 0.7)], 2)
-    C.mast(ball, bcx, bcy - 7.6, 20, rings=False, width=1.0, tone=3, phase=150)
+    ball.fill([(bcx - 1.1, sy_ - 33.5), (bcx - 0.4, TOP - 4), (bcx + 0.4, TOP - 4), (bcx + 1.1, sy_ - 33.5)], 3)   # the spire
+    for cx_, cy_, r_, tone in ((bcx, bcy, 8, 4), (bcx - 2, bcy - 2.2, 4.6, 7), (bcx - 3, bcy - 3.4, 1.6, 10)):
+        orb(ellipse(cx_, cy_, r_, r_, BALL_TRACE), tone, circle=(cx_, cy_, r_))
+    orb([(bcx - 8, bcy - 0.5), (bcx + 8, bcy - 0.5), (bcx + 8, bcy + 0.7), (bcx - 8, bcy + 0.7)], 2)
     for rx, ry, slot in hoops:                      # and their front halves over the ball
-        C.ring(ball, bcx, bcy, rx, ry, 6, 3, slot, False)
+        orb(arc(bcx, bcy, rx, ry, 6, False, 3), 11, param=4 + slot, low=7, high=14)
 
     # The helipad: a wide block; its pad, the H in a circle, corner lights; the craft
     hp = tower(352, 140, 47, 46, -80)
@@ -793,7 +856,7 @@ def city():
     s.faces((9, 7, 4))
     s.fill([hp.T(4, 4), hp.T(43, 4), hp.T(43, 42), hp.T(4, 42)], 6)
     s.line([hp.T(7, 7), hp.T(40, 7), hp.T(40, 39), hp.T(7, 39)], 11, 0.5)
-    s.roof_disc(hp.T, 23.5, 23, 10, 32, 11, 0.6)
+    s.roof_disc(hp.T, 23.5, 23, 10, 24, 11, 0.6)
     H = [(-3.6, -3), (-2.4, -3), (-2.4, -0.6), (2.4, -0.6), (2.4, -3), (3.6, -3), (3.6, 3), (2.4, 3), (2.4, 0.6),
          (-2.4, 0.6), (-2.4, 3), (-3.6, 3)]
     s.fill([hp.T(23.5 + du, 23 + dv) for du, dv in H], 11)
@@ -848,6 +911,8 @@ def city():
             s.node(comb_down(flip, sand_gap_u(0), -foot, SAND_GAP, [foot - e for e in ends], SAND_COLS - 1,
                              SAND_PITCH, spine=SAND_SPINE), kind="sand", param=p_, low=12, high=15, tone=14, sweep=sweep)
     g(s, hg.R, 4, 8, 2, 4, 7, 12, 2, 13, 700)
+    for k, (uu, vv) in enumerate([(39, 17), (1.5, 17)]):
+        C.warnings.append((s, *hg.T(uu, vv), 1.1, 130 + 90 * k))
     s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
     # far right: a tall tower with a grid of windows
     s, bx = C.building("R2", 474, 40, 18, 22, -200, (9, 7, 3), parapet=0)
@@ -859,6 +924,18 @@ def city():
     C.box_on("N0", bx, 4, 3, 8, 7, 5, lid=5)
     g(s, bx.L, 3, 6, 4, 3, 5.5, 6, 7, 14, 800, band=3.6, seg=5)
     g(s, bx.R, 3, 6, 2, 3, 6, 6, 4, 13, 830, band=3.6, seg=5)
+    # a neon blade sign out from N's left face: BAR down a dark blade, a neon tube along its outer edge. Its
+    # letters light with reso like the billboards, and flicker while notes are held, more as noise rises.
+    blade = Box(bx.x0 + 2, bx.x0 + 3, bx.y1, bx.y1 + SIGN_DEPTH, bx.z1 - SIGN_TOP - SIGN_HEIGHT, bx.z1 - SIGN_TOP)
+    s = solid("sign", blade)
+    s.faces((3, 1, 2))
+    for j, ch in enumerate(SIGN_WORD):
+        w0 = 3 + j * (9 + SIGN_GAP)
+        pts = tidy([blade.R(SIGN_DEPTH - 1 - 6 + p[0], w0 + p[1]) for p in strokes(SIGN_GLYPHS[ch], SIGN_STROKE, 0.2)])
+        assert pts, f"the sign's {ch} doesn't keep the drawing rules"
+        s.node(pts, kind="sign", param=j, low=8, high=15, tone=13, lead=True)
+    s.node(quad(blade.R, 0.15, 1.5, 0.75, SIGN_HEIGHT - 3), kind="sign", param=len(SIGN_WORD), low=5, high=15,
+           tone=12, lead=True)
     # M: a dark tower behind the second track
     s, bx = C.building("M", 402, 130, 22, 16, -84, NEAR)
     C.cornice(s, bx, 2.5, 10)
@@ -881,10 +958,10 @@ def city():
         p.faces((7, 5, 2), sides=(False, True, True))
     # the road's cars, tiny, two lanes each way; drawn on the road, under what is in front of it
     road = solid("road", Box(214, 232, -300, -16, 39, 40))
-    for k, (lane, way, speed, home, phase) in enumerate(ROAD_CARS):
+    for k, (lane, way, speed, home, phase, rank) in enumerate(ROAD_CARS):
         pts = [P(lane + du, home + dv, 39.2) for du, dv in ((0.6, 1.5), (0.6, -1.5), (-0.6, -1.5), (-0.6, 1.5))]
         road.node(pts, kind="car", param=k, tone=14 if way < 0 else 11, keep=True, way=way, speed=speed,
-                  phase=phase, home=home, sweep=[(-320, 160), (320, -160)])
+                  phase=phase, home=home, rank=rank, sweep=[(-320, 160), (320, -160)], lead=True)
 
     # --- the main track: deck, rails and piers, along x
     beam = solid("beam", Box(-160, 300, 3, 9, 54, 62))
@@ -977,6 +1054,7 @@ def city():
     s.fill([dd.T(10, 18), dd.T(18, 18), dd.T(18, 24), dd.T(10, 24)], 4)
     dx, dy = dd.T(28, 10)
     C.mast(s, *dd.T(68, 6), 56, phase=200)
+    C.duct(s, dd, 35, 22, 4)
     # Bc: the block at the bottom centre: a plant room with vents
     bc = tower(292, 236, 80, 30, 132)
     s = solid("Bc", bc)
@@ -987,6 +1065,7 @@ def city():
         r.fill(quad(rb.L, 2 + k * 5.5, 3, 3, 5), 2)
     for k in range(3):
         s.fill([bc.T(8 + k * 7, 18), bc.T(13 + k * 7, 18), bc.T(13 + k * 7, 25), bc.T(8 + k * 7, 25)], 2)
+    C.duct(s, bc, 18, 8.5, 4.6)
     # Rf: the block at the right: a wide base with lit floors, a box above with fans and marks
     rf = tower(462, 196, 54, 30, -12)
     s = solid("Rf", rf)
@@ -1009,7 +1088,11 @@ def city():
         owner.node(pts, kind="ring", param=param, low=7, high=14, tone=11, outline=True)
     for owner, x, y, rr, phase in C.lights:
         owner.node([(x, y - rr), (x + rr, y), (x, y + rr), (x - rr, y)], kind="light", low=4, high=15,
-                   param=phase % 256, tone=15)
+                   param=phase % 256, tone=15, lead=True)
+    # aircraft warning lights on the masts and the tallest towers and spires: they blink slowly, white
+    for owner, x, y, rr, phase in C.warnings:
+        owner.node([(x, y - rr), (x + rr, y), (x, y + rr), (x - rr, y)], kind="warning", low=5, high=15,
+                   param=phase % 256, tone=13, lead=True)
     owner = solid("dishitself", Box(dd.x0 + 24, dd.x0 + 32, dd.y0 + 6, dd.y0 + 14, dd.z1, dd.z1 + 16))
     owner.fill([(dx - 1.5, dy + 1), (dx - 0.8, dy - 7), (dx + 0.8, dy - 7), (dx + 1.5, dy + 1)], 3)
     owner.fill([(dx - 4, dy + 1.5), (dx + 4, dy + 1.5), (dx + 4, dy - 0.5), (dx - 4, dy - 0.5)], 4)
@@ -1017,29 +1100,39 @@ def city():
     dpts = [(dx + 8 * math.cos(a) * math.cos(tilt) - 6 * math.sin(a) * math.sin(tilt),
              dy - 11 + 8 * math.cos(a) * math.sin(tilt) + 6 * math.sin(a) * math.cos(tilt))
             for a in [2 * math.pi * k / 16 for k in range(16)]]
-    owner.node(dpts, kind="dish", role="disc", tone=12, keep=True, pivot=(round(dx), round(dy - 11)), spread=2)
+    # the dish and its rings turn as one about its centre: ratio's step sets where it points (DISH_ANGLES), and
+    # while notes are held it swings a little either way of that
+    hub = (round(dx), round(dy - 11))
+    reach_ = [(dx + 9.5 * math.cos(2 * math.pi * k / 16), dy - 11 + 9.5 * math.sin(2 * math.pi * k / 16)) for k in range(16)]
+    owner.node(dpts, kind="dish", role="disc", tone=12, keep=True, pivot=hub, reach=reach_, lead=True)
     owner.node([(dx - 0.5, dy - 11), (dx + 4.5, dy - 16.5), (dx + 5.5, dy - 16), (dx + 0.5, dy - 10.4)],
-               kind="dish", role="feed", tone=4, keep=True, pivot=(round(dx), round(dy - 11)), spread=2)
-    owner.node(ellipse(dx, dy - 11, 4.4, 3.4, 12, 0.5), kind="ring", param=2, low=6, high=10, tone=8, outline=True)
-    owner.node(ellipse(dx, dy - 11, 1.6, 1.3, 8, 0.5), kind="ring", param=3, low=6, high=10, tone=8, outline=True)
+               kind="dish", role="feed", tone=4, keep=True, pivot=hub, reach=reach_)
+    owner.node(ellipse(dx, dy - 11, 4.4, 3.4, 12, 0.5), kind="dish", role="ring", param=4, low=6, high=10, tone=8,
+               outline=True, pivot=hub, reach=reach_)
+    owner.node(ellipse(dx, dy - 11, 1.6, 1.3, 8, 0.5), kind="dish", role="ring", param=5, low=6, high=10, tone=8,
+               outline=True, pivot=hub, reach=reach_)
 
     craft = solid("craft", Box(hp.x0 + 10, hp.x0 + 36, hp.y0 + 10, hp.y0 + 36, hp.z1, hp.z1 + 40))
     cx, cy = hcx, hcy
     craft.node(ellipse(cx, cy, 6, 2.6, 12), kind="shadow", tone=4, keep=True)
-    up = [(0, 2), (0, -CRAFT_RISE - 2)]
     # the craft: a flying car, its nose to the right: two thruster pods on a keel under its hull, a
     # dark canopy, a fin with a beacon, a headlight, and its underside in shadow
-    def part(role, pts, tone, **spec):
-        craft.node([(cx + x, cy + y) for x, y in pts], kind="craft", role=role, tone=tone, keep=not spec,
-                   sweep=up, pivot=(round(cx), round(cy - 4)), **spec)      # one pivot: the parts move as one
+    # (drift wobbles it: up to CRAFT_BOB px up and down, CRAFT_SWAY across and CRAFT_TILT degrees)
+    up = [(dx_, dy_) for dx_ in (-CRAFT_SWAY, CRAFT_SWAY) for dy_ in (CRAFT_BOB + 1, -CRAFT_RISE - CRAFT_BOB - 1)]
+
+    def part(role, pts, tone=None, lead=False, **spec):
+        craft.node([(cx + x, cy + y) for x, y in pts], kind="craft", role=role, tone=tone, keep=not spec, lead=lead,
+                   sweep=up, spread=1.2, pivot=(round(cx), round(cy - 4)), **spec)      # one pivot: the parts move as one
     part("thrusters", [(-8.6, -2.7), (-4.8, -2.7), (-4.8, -2.1), (4.8, -2.1), (4.8, -2.7), (8.4, -2.7), (8.9, -1.95),
-                       (8.4, -1.2), (4.8, -1.2), (4.8, -1.6), (-4.8, -1.6), (-4.8, -1.2), (-8.6, -1.2), (-9.1, -1.95)], 5)
+                       (8.4, -1.2), (4.8, -1.2), (4.8, -1.6), (-4.8, -1.6), (-4.8, -1.2), (-8.6, -1.2), (-9.1, -1.95)], 5,
+         lead=True)
     part("hull", [(-8.2, -2.5), (-8.7, -4.1), (-7.8, -5.0), (-7.2, -6.7), (-6.1, -6.7), (-5.4, -5.0), (4.6, -4.9),
                   (8.2, -4.2), (9.8, -3.2), (9.3, -2.6), (7.6, -2.4)], 12)
     part("underside", [(-8.0, -3.15), (7.9, -3.05), (9.3, -2.6), (7.6, -2.4), (-8.2, -2.5)], 4)
     part("canopy", [(-3.4, -4.95), (-1.8, -6.9), (2.0, -7.2), (4.0, -6.0), (4.9, -4.9)], 3)
     part("headlight", [(8.9, -3.85), (9.8, -3.45), (8.9, -3.05), (8.3, -3.45)], 15)
     part("beacon", [(-6.6, -7.9), (-5.9, -7.2), (-6.6, -6.5), (-7.3, -7.2)], 15, low=6, high=15, param=1)
+    CITY_DUCTS[0] = C.ducts
     return SOLIDS
 
 
@@ -1343,8 +1436,24 @@ def compose():
         if it.occ:
             cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
     out.reverse()
+    out = [e for e in out if not unseen(e, out)]
     out = merge(out)
     return solids, floor(out) + out, dropped
+
+
+UNSEEN = ("glow", "light", "warning", "ring")   # still nodes left out when less than a quarter of one is ever seen
+
+
+def unseen(e, out):
+    """Whether e is a still light or ring (UNSEEN) hidden, but for at most a quarter of it, by the header or what is
+    drawn over it: it would only cost bytes."""
+    if e["kind"] != "node" or e["item"].node["kind"] not in UNSEEN:
+        return False
+    at = next(k for k, x in enumerate(out) if x is e)
+    g = screen_poly(e["item"].pts)
+    front = shapely.union_all([screen_poly(x["pts"]) for x in out[at + 1:] if x["kind"] in ("fill", "round") and
+                               not x.get("width")] + [rect(-100, -100, 580, TOP)])
+    return g.difference(front).area < 0.25 * g.area
 
 
 # The city's floor: we look down on it, so there is no sky. Whatever the towers leave uncovered is the far
@@ -1545,9 +1654,11 @@ def merge(out):
 
 
 # ------------------------------------------------------------------ nodes
-MOVING = ("light", "dish", "craft", "shadow", "train", "car")
-KINDS = ["fixed", "window", "glow", "glyph", "pattern", "panel", "sand", "neon", "ring", "fog", "stripe", "light",
-         "dish", "craft", "shadow", "train", "car"]
+# The nodes that move, after those that restyle, in the order display.cpp brings them up to date: when a frame's
+# budget runs short, those later wait a frame (the train never does). Each part that moves as one is a group,
+# brought up to date whole or not at all (lead[] marks where each starts).
+MOVING = ("train", "orb", "dish", "craft", "shadow", "car", "vane", "sign", "warning", "light")
+KINDS = ["fixed", "window", "glow", "glyph", "pattern", "panel", "sand", "neon", "ring", "fog", "stripe"] + list(MOVING)
 
 
 class Node:
@@ -1559,6 +1670,7 @@ class Node:
         self.low, self.high = spec.get("low", 0), spec.get("high", 0)
         self.tone = spec.get("tone", 8)
         self.keep = spec.get("keep", False)
+        self.lead = spec.get("lead", False)
         self.outline = spec.get("outline", False)
         pts = item.pts
         xs, ys = [p[0] for p in pts], [p[1] for p in pts]
@@ -1572,6 +1684,11 @@ class Node:
             self.ox, self.oy = round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)
         self.path = spec.get("path")
         self.spec = spec
+        # a bound circle (the ball's): written as an SVG circle about its node, traced for the checks
+        self.circle = None
+        if spec.get("circle"):
+            cx, cy, r = spec["circle"]
+            self.circle = (round(cx - self.ox, 2), round(cy - self.oy, 2), r)
         if spec.get("exact"):          # a reshaping outline: its points as display.cpp writes them, in order
             self.rel = [(round(x - self.ox, 2), round(y - self.oy, 2)) for x, y in pts]
         else:
@@ -1617,7 +1734,7 @@ def build():
     numbered = sorted((n for n in nodes if n.path is None), key=lambda n: rank[n.kind])
     for i, n in enumerate(numbered):
         n.index = FIRST + i
-    return dict(solids=solids, out=out, nodes=numbered, paths=paths, dropped=dropped)
+    return dict(solids=solids, out=out, nodes=numbered, paths=paths, dropped=dropped, ducts=CITY_DUCTS[0])
 
 
 # ------------------------------------------------------------------ writing
@@ -1690,7 +1807,11 @@ def write_panel(sc):
                 # a fill alone: kept, it is the still artwork's paint; repainted, the palette lends the
                 # fill (and its stroke), so an authored stroke would only be bytes
                 paint = f'fill="{t}"'
-            out.append(f'<path id="{ID}_node_{n.index}" d="{path_d(n.rel)}" {paint}/>')
+            if n.circle:
+                cx, cy, r = n.circle
+                out.append(f'<circle id="{ID}_node_{n.index}" cx="{num(cx)}" cy="{num(cy)}" r="{num(r)}" {paint}/>')
+            else:
+                out.append(f'<path id="{ID}_node_{n.index}" d="{path_d(n.rel)}" {paint}/>')
     for k, tone in enumerate(PALETTE_TONES):
         out.append(f'<circle id="{ID}_palette_{k}" cx="640" cy="0" r="1" fill="{grey(tone)}" stroke="{grey(tone)}" '
                    f'stroke-width="{num(PAL_WIDTH)}"/>')
@@ -1836,6 +1957,9 @@ def write_tables(sc):
     n = len(nodes) + FIRST
     start, end = sc["course"]
     restyle_end = min(k.index for k in nodes if k.kind in MOVING)
+    leads = [int(k.kind in MOVING and (k.lead or k.index == FIRST or nodes[k.index - FIRST - 1].kind != k.kind)) for k in nodes]
+    starts = [i for i, v in enumerate(leads) if v] + [len(nodes)]
+    largest_group = max(b - a for a, b in zip(starts, starts[1:]))
 
     def table(values_of, path=lambda k: 0, bar=0):
         return ", ".join([str(path(k)) for k in paths] + [str(bar)] * 8 + [str(values_of(k)) for k in nodes])
@@ -1864,8 +1988,11 @@ def write_tables(sc):
          "const unsigned char low[node_count] = {" + table(lambda k: k.low, lambda k: k.low) + "};",
          "const unsigned char high[node_count] = {" + table(lambda k: k.high, lambda k: k.high) + "};",
          "const unsigned char param[node_count] = {" + table(lambda k: k.param) + "};",
-         "// Its points: what redrawing it costs.",
+         f"// Its points: what redrawing it costs (a bound circle counted as {BALL_TRACE}, its trace's).",
          "const unsigned char points[node_count] = {" + table(lambda k: len(k.rel), lambda k: PATH_POINTS, 4) + "};",
+         "// 1 where a group of nodes that move as one starts (each moving node not in a group is its own).",
+         "const unsigned char lead[node_count] = {" + table(lambda k: leads[k.index - FIRST]) + "};",
+         f"const opxy::u32 largest_group = {largest_group};",
          "// The fans: each one's centre from its node, Q10 px, and its blades' reach in its roof's units, Q10;",
          f"// a blade's root is {FAN_HUB} units out, {FAN_SWEEP} rad back, and its tips {FAN_TIP} rad either side (Q16 turns below).",
          "const opxy::i32 fan_x[fans] = {" + ", ".join(str(q10(k.spec["fan"][0][0])) for k in fans) + "};",
@@ -1893,6 +2020,21 @@ def write_tables(sc):
          "const opxy::i32 car_way[cars] = {" + ", ".join(str(c.spec["way"]) for c in cars) + "};",
          "const opxy::i32 car_speed[cars] = {" + ", ".join(str(c.spec["speed"]) for c in cars) + "};",
          "const opxy::i32 car_phase[cars] = {" + ", ".join(str(c.spec["phase"]) for c in cars) + "};",
+         "// Its rank: spread shows those ranked under 2 + 6 x spread.",
+         "const opxy::u32 car_rank[cars] = {" + ", ".join(str(c.spec["rank"]) for c in cars) + "};",
+         "// Octave's steps (16', 8', 4', 2'): the ball on its spire, px down from where it rests; and ratio's",
+         "// steps: where the dish points, tenths of a degree clockwise, and its swing while notes are held, degrees.",
+         "const opxy::i32 ball_step[4] = {" + ", ".join(map(str, BALL_STEPS)) + "};",
+         "const opxy::i32 dish_angle[8] = {" + ", ".join(map(str, DISH_ANGLES)) + "};",
+         f"const opxy::i32 dish_sway = {DISH_SWAY};",
+         f"// Drift 100's wobble of the craft: px up and down, px across (Q10) and degrees.",
+         f"const opxy::i32 craft_bob = {CRAFT_BOB}, craft_sway = {q10(CRAFT_SWAY)}, craft_tilt = {CRAFT_TILT};",
+         f"// The duct fans: {sc['ducts']}, each with {VANE_POSES} blade poses (param: fan x 4 + pose). The neon sign:",
+         f"// {len(SIGN_WORD)} letters (param 0..{len(SIGN_WORD) - 1}), then its tube (param {len(SIGN_WORD)}).",
+         f"const opxy::u32 ducts = {sc['ducts']}, vane_poses = {VANE_POSES}, sign_letters = {len(SIGN_WORD)};",
+         "// The still artwork's round elements (SVG ellipses and circles) and the bound circles.",
+         f"const opxy::u32 ellipses = {sc['rounds'].get('ellipse', 0)}, circles = {sc['rounds'].get('circle', 0)}, "
+         f"bound_circles = {sum(1 for k in nodes if k.circle)};",
          "// The still artwork's fill below the header and the header's own, px^2: the device fills",
          "// these every frame.",
          f"const opxy::i32 static_fill = {round(sc['fill'])}, header_fill = {HEADER_FILL};",
@@ -1943,6 +2085,8 @@ def write_outlines(sc):
     for k in sc["nodes"]:
         m = measures(k.rel)
         x0, x1, y0, y1 = m["box"]
+        if k.circle:              # a bound circle: its trace's measures, and the circle's own area
+            m["area"] = math.pi * k.circle[2] ** 2
         L.append(f"    {{{m['count']}, {int(m['gap'] * 1024 - 0.01)}, {int(m['closing'] * 1024 - 0.01)}, "
                  f"{int(m['turn'] * 10 - 0.01)}, {max(1, round(m['area'] * 16))}, {2 if k.spec.get('fog') else int(k.fill)}, "
                  f"{q10(x0)}, {q10(x1)}, {q10(y0)}, {q10(y1)}}},  // {k.role}")
@@ -1981,11 +2125,38 @@ def ring_level(g, slot):
 ROAD_GAP = 30                         # display.cpp's road_gap
 
 
-def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None, glow=None):
+def halves(v):
+    """display.cpp's halves(), in px: to the nearest half pixel."""
+    return math.floor(v * 2 + 0.5) / 2
+
+
+def fan_weights(balance):
+    """display.cpp's fans' speeds for balance (Q16): the left-hand fan's, then layer I's and layer II's."""
+    a = balance / 65536 * math.pi / 2
+    return [1.0, max(1 / 16, min(1.414, math.cos(a) * 1.414)), max(1 / 16, math.sin(a) * 1.414)]
+
+
+def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None, glow=None, ball=None, dish=None,
+           vane=0, traffic=None, spins=None, pace=None):
     """display.cpp's restyled() and moved(): each node shown -> (x, y, scale, turn degrees, grey or None);
     the reshaping outlines -> their points about their node and grey. glow: the envelope's level (Q16)
-    with the envelope known, None for the fallback."""
+    with the envelope known, None for the fallback. ball, dish: where octave's and ratio's easing has got to
+    (px, tenths of a degree; settled when None); vane: the duct fans' turn (Q16); traffic: the cars shown (a
+    bit each; spread's when None); spins: each fan's turn (Q16; spin times its balance weight when None)."""
     out = {}
+    for name in ("octave", "noise", "balance", "ratio", "spread", "drift"):
+        c.setdefault(name, dict(octave=24576, noise=3932, balance=32768, ratio=20480, spread=26214, drift=16384)[name])
+    if pace is None:
+        pace = 1.0 if held else 0.0
+    if ball is None:
+        ball = BALL_STEPS[(c["octave"] * 4) >> 16]
+    if dish is None:
+        dish = DISH_ANGLES[(c["ratio"] * 8) >> 16]
+    if traffic is None:
+        shown = 2 + ((c["spread"] * 6 + 32768) >> 16)
+        traffic = sum(1 << k for k, car in enumerate(ROAD_CARS) if car[5] < shown)
+    if spins is None:
+        spins = [int(spin * w) & 0xFFFF for w in fan_weights(c["balance"])]
     pulse = 0
     if held:
         t = (clock * 3 // 2) & 1023
@@ -2032,19 +2203,49 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
             shade = lo + (level - 1) * (hi - lo) // 2
         elif kind == "light":
             shade = hi if ((clock + p * 4) & 1023) < 230 else lo
+        elif kind == "warning":
+            shade = hi if ((clock + p * 8) & 2047) < 280 else lo
+        elif kind == "orb":
+            y += halves(ball)
+            if p & 4:
+                level = ring_level(c["ring"], p & 1)
+                if not level:
+                    continue
+                shade = lo + (level - 1) * (hi - lo) // 2
+        elif kind == "vane":
+            v = (vane + (p >> 2) * 2427) & 0xFFFF
+            if (p & 3) != ((v * 3 * VANE_POSES) >> 16) % VANE_POSES:
+                continue
+        elif kind == "sign":
+            shade = between(lo, hi, c["reso"])
+            if held and c["noise"]:
+                r = r16(p, clock >> 6, 61)
+                often = (c["noise"] * 2) // 5
+                if r < often // 2:
+                    shade = 1
+                elif r < often:
+                    shade = (lo + shade) // 2
         elif kind == "stripe":
             step = (c.get("lowcut", 0) * 100 + 32768) >> 16
             if step * (SUN_STRIPES + 1) > (p + 1) * 100:
                 continue
         elif kind == "dish":
-            turn = ((sway(clock * 5) * 8) >> 10)
+            if p & 4:
+                level = ring_level(c["ring"], p & 1)
+                if not level:
+                    continue
+                shade = lo + (level - 1) * (hi - lo) // 2
+            turn = int((dish + (-5 if dish < 0 else 5)) / 10) + ((sway(clock * 5) * DISH_SWAY) >> 10)
         elif kind in ("craft", "shadow"):
             up = (c["bite"] * CRAFT_RISE) >> 16
-            bob = ((sway(clock * 41) + 512) >> 10) if held and up else 0
             if kind == "shadow":
                 sc_ = (1024 - up * 10) / 1024
             else:
-                y += -up + bob
+                a = ((c["drift"] >> 6) * int(pace * 1024)) >> 10 if up else 0
+                across = sway(clock * 19 + 9000)
+                y += -up + halves(((sway(clock * 29) * CRAFT_BOB * a) >> 10) / 1024)
+                x += halves((((across * (round(CRAFT_SWAY * 1024) >> 4)) >> 6) * a >> 10) / 1024)
+                turn = (across * CRAFT_TILT * a + (1 << 19)) >> 20
                 if p:
                     shade = hi if ((clock + 300) & 1023) < 120 else lo
         elif kind == "train":
@@ -2056,17 +2257,17 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
         elif kind == "car":
             s = k.spec
             lo_, hi_ = s["course"]
-            run = (road[p] if road else s["phase"]) % (hi_ - lo_ + ROAD_GAP)
-            if run > hi_ - lo_:
+            run = (road[p] if road and p < len(road) else s["phase"]) % (hi_ - lo_ + ROAD_GAP)
+            if run > hi_ - lo_ or not (traffic >> p) & 1:
                 continue
-            dd = lo_ + run if s["way"] > 0 else hi_ - run
+            dd = math.floor(lo_ + run if s["way"] > 0 else hi_ - run)
             x += dd
             y -= dd / 2
         out[i] = (x, y, sc_, turn, shade)
     for k in sc["paths"]:
         if k.path in FAN_PATHS:
             (fx, fy), reach = k.spec["fan"]
-            pts = [(fx + x, fy + y) for x, y in blades(reach, ((spin + k.path * 9000) & 0xFFFF) / 65536)]
+            pts = [(fx + x, fy + y) for x, y in blades(reach, ((spins[k.path] + k.path * 9000) & 0xFFFF) / 65536)]
             out[k.index] = (k.ox, k.oy, pts, 9)
         else:
             lx, ly = k.spec["line"]
@@ -2149,6 +2350,11 @@ def preview(out_dir, name, sc, c, **kw):
             if not k.outline:
                 fill += measures(k.rel)["area"] * s * s
             co, si = math.cos(math.radians(turn)) * s, math.sin(math.radians(turn)) * s
+            if k.circle:
+                cx, cy, r = k.circle
+                svg.append(f'<circle transform="matrix({co:.4f} {si:.4f} {-si:.4f} {co:.4f} {x:.2f} {y:.2f})" '
+                           f'cx="{num(cx)}" cy="{num(cy)}" r="{num(r)}" fill="{f}" stroke="{t}" stroke-width="{width}"/>')
+                continue
             svg.append(f'<path transform="matrix({co:.4f} {si:.4f} {-si:.4f} {co:.4f} {x:.2f} {y:.2f})" '
                        f'd="{path_d(k.rel)}" fill="{f}" stroke="{t}" stroke-width="{width}"/>')
     svg.append('<rect width="480" height="38" fill="#000"/>')
@@ -2217,16 +2423,16 @@ def previews(out, sc):
     tyrell_page = [q(v) for v in (0, .22, .46, .28, .45, 0, .8, 0)]
     tyrell_shift = [q(v) for v in (0, .375, 0, .06, .5, .3125, .4, .25)]
 
+    shift_names = ("sine", "octave", "lowcut", "noise", "balance", "ratio", "spread", "drift")
+
     def setting(page, row, **kw):
-        return dict(zip(names, page), sine=row[0], lowcut=row[2], values=captions(page, row), **kw)
+        return dict(zip(names, page), **dict(zip(shift_names, row)), values=captions(page, row), **kw)
 
     def changed(page=None, row=None, **controls):
         page, row = list(page or tyrell_page), list(row or tyrell_shift)
         for name, v in controls.items():
-            if name == "sine":
-                row[0] = q(v)
-            elif name == "lowcut":
-                row[2] = q(v)
+            if name in shift_names:
+                row[shift_names.index(name)] = q(v)
             else:
                 page[names.index(name)] = q(v)
         return setting(page, row)
@@ -2235,7 +2441,7 @@ def previews(out, sc):
     start, end = sc["course"]
     cars = [n for n in sc["nodes"] if n.kind == "car"]
     # in flight, each car where it shows: in the gaps between the towers in front of the road
-    at = (-66, 30, -75, 26)
+    at = (-66, 30, -75, 26, 22, -80, 30, -70)
     road = [d - n.spec["course"][0] if n.spec["way"] > 0 else n.spec["course"][1] - d for n, d in zip(cars, at)]
     flying = dict(held=True, hold=900, clock=700, d=start + (end - start) * 2 // 5, spin=5000, road=road)
     states = [("resting", tyrell, {}),
@@ -2252,6 +2458,16 @@ def previews(out, sc):
     states += [(f"bright{v:03d}", changed(bright=v / 100), {}) for v in (0, 25, 50, 75, 100)]
     states += [(f"lowcut{v:03d}", changed(lowcut=v / 100), {}) for v in (0, 25, 50, 75, 100)]
     states += [(f"reso{v:03d}", changed(reso=v / 100), {}) for v in (0, 100)]
+    # the Shift row's: the ball at each of octave's steps, the dish at each of ratio's, the road's traffic at
+    # spread 0, 40 and 100, the sign flickering at noise 100, the fans at balance 0 and 100, and the craft
+    # wobbling at drift 100
+    states += [(f"octave{k}", changed(octave=(k + 0.5) / 4), {}) for k in range(4)]
+    states += [(f"ratio{k}", changed(ratio=(k + 0.5) / 8), {}) for k in range(8)]
+    states += [(f"spread{v:03d}", changed(spread=v / 100), {}) for v in (0, 40, 100)]
+    states += [(f"noise100-{k}", changed(noise=1, reso=.6), dict(held=True, clock=700 + 64 * k)) for k in range(3)]
+    states += [(f"balance{v:03d}", changed(balance=v / 100), dict(held=True, spin=30000)) for v in (0, 100)]
+    states += [(f"drift100-{k}", changed(drift=1, bite=.6), dict(held=True, clock=700 + 900 * k)) for k in range(3)]
+    states += [(f"vanes{k}", tyrell, dict(vane=k * 7282)) for k in range(3)]
     # the windows' glow through a note at Tyrell's envelope (default.json's words, Q31), at bright 0 so each
     # glowing window shows: the note's start, mid-attack, the peak, sustain, mid-release and out
     tyrell_amp = [w << 16 for w in (12416, 32640, 29490, 21632)]
@@ -2270,14 +2486,17 @@ def previews(out, sc):
 
 def main():
     if "--round" in sys.argv:
-        ROUND.update(sys.argv[sys.argv.index("--round") + 1].split(","))
-        assert ROUND <= {"ellipse"}, f"unknown forms: {ROUND}"
-        print("the roof's circles as SVG ellipses, for a test build only (not yet seen on the device)")
+        form = sys.argv[sys.argv.index("--round") + 1]
+        assert form in ("ellipse", "paths"), f"unknown form: {form}"
+        if form == "paths":
+            ROUND.clear()
+            print("the roof's circles as outlines of points, not SVG ellipses (the fallback)")
     if "--compact" in sys.argv:
         COMPACT.update(sys.argv[sys.argv.index("--compact") + 1].split(","))
         assert COMPACT <= {"nospace", "implicit", "relative"}, f"unknown forms: {COMPACT}"
         print(f"compact path syntax, for a test build only (not yet seen on the device): {', '.join(sorted(COMPACT))}")
     sc = build()
+    sc["rounds"] = collections.Counter(e["shape"][0] for e in sc["out"] if e["kind"] == "round")
     sc["windows"] = window_stats()
     sc["glow_share"] = glow_share(sc["nodes"])
     size, fill_static = write_panel(sc)
@@ -2297,9 +2516,19 @@ def main():
     nodes = sc["nodes"]
     statics = sum(1 for e in sc["out"] if e["kind"] != "node")
     rounds = collections.Counter(e["shape"][0] for e in sc["out"] if e["kind"] == "round")
-    moving = sum(len(k.rel) for k in nodes if k.kind in MOVING)
-    largest = max(len(k.rel) for k in nodes if k.kind not in MOVING)
-    assert moving + largest <= BUDGET + 60, f"{moving} moving points and a node of {largest}"
+    # every group that moves fits a frame's budget beside the train and the fans turning, so none waits for ever
+    train = sum(len(k.rel) for k in nodes if k.kind == "train")
+    groups, at = [], None
+    for k in nodes:
+        if k.kind in MOVING and k.kind != "train":
+            if k.lead or at is None or at[0] != k.kind:
+                at = [k.kind, 0, 0]
+                groups.append(at)
+            at[1] += len(k.rel)
+            at[2] += 1
+    largest = max(groups, key=lambda g: g[1])
+    assert train + 3 * PATH_POINTS + largest[1] <= BUDGET, f"the {largest[0]} group's {largest[1]} points don't fit beside the train"
+    assert sum(1 for k in nodes if k.kind == "train") + 3 + max(g[2] for g in groups) <= 30, "a group doesn't fit the nodes beside the train"
     print(f"{len(nodes) + 8} nodes, {statics} static outlines ({', '.join(f'{v} {k}s' for k, v in sorted(rounds.items())) or 'no round elements'}), artwork {size} bytes of {ARTWORK_LIMIT}, "
           f"still fill {fill_static:.0f} px^2 ({fill_static / (480 * 182):.2f} of the stage, "
           f"{(fill_static + HEADER_FILL) / (480 * 182):.2f} with the header), train {sc['course']}")

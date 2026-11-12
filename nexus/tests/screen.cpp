@@ -6,9 +6,13 @@
 // notes are held; bright bringing in one fog sheet over the far city, from none at 0 to its
 // fullest at 100, and lighting the windows, which run down every face, in a scattered order; the windows' glow following the amp
 // envelope through attack, decay, sustain and release, and stopping; sine setting the advert's lines
-// with Shift held or not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
-// those, at a cost by their points), while notes are held and while controls turn; and how much
-// of the screen is filled, which the device pays for every frame.
+// with Shift held or not; the rest of the Shift row: octave sliding the ball along its spire (its rings with
+// it), balance setting the right-hand fans' speeds, drift wobbling the craft, noise flickering the neon sign,
+// spread bringing in the road's cars and ratio turning the dish, each only when it changes or while notes are
+// held; the aircraft warning lights blinking slowly and the duct fans stepping through their poses while
+// held; the round parts as SVG ellipses and the ball as bound circles; how much changes a frame, in nodes and
+// in the points of their outlines (the device redraws those, at a cost by their points), while notes are held
+// and while controls turn; and how much of the screen is filled, which the device pays for every frame.
 #include "../display.cpp"
 #include "outlines.h"
 #include <cmath>
@@ -185,9 +189,9 @@ void check_train() {
     }
 }
 
-// The road's cars: between two frames each either moved a little along the road (at most a pixel
-// across, half that up or down, the way it drives), or came or went at the ends of its run, where
-// make_panel.py found it wholly hidden.
+// The road's cars: between two frames each either moved a little along the road (a pixel at a time across,
+// two when a busy frame made it wait, half that up or down, the way it drives), or came or went at the ends
+// of its run, where make_panel.py found it wholly hidden.
 u32 cars_appeared = 0;
 void check_cars() {
     for (u32 k = city::restyle_end; k < nexus::Frame::node_count; ++k) {
@@ -197,7 +201,7 @@ void check_cars() {
         const i32 home_x = city::home_x[k] * unit;
         if (!hidden(a) && !hidden(b)) {
             const i32 dx = b.x - a.x, dy = b.y - a.y;
-            expect(dx * city::car_way[p] >= 0 && (dx < 0 ? -dx : dx) <= unit && dy >= -(dx >> 1) - 2 &&
+            expect(dx * city::car_way[p] >= 0 && (dx < 0 ? -dx : dx) <= 2 * unit && dy >= -(dx >> 1) - 2 &&
                        dy <= -(dx >> 1) + 2, "a road car jumped");
         } else if (hidden(a) && !hidden(b)) {
             const i32 at = b.x - home_x;
@@ -232,12 +236,23 @@ bool settled(const i32 (&slots)[8]) {
     c.bright = nexus::screen::q16(slots[2]); c.reso = nexus::screen::q16(slots[3]);
     c.chorus = nexus::screen::q16(slots[4]); c.ring = nexus::screen::q16(slots[5]);
     c.swell = nexus::screen::q16(slots[6]); c.bite = nexus::screen::q16(slots[7]);
-    c.sine = nexus::screen::q16(row.values[0]);
-    c.lowcut = nexus::screen::q16(row.values[2]);
+    c.sine = nexus::screen::q16(row.values[0]); c.octave = nexus::screen::q16(row.values[1]);
+    c.lowcut = nexus::screen::q16(row.values[2]); c.noise = nexus::screen::q16(row.values[3]);
+    c.balance = nexus::screen::q16(row.values[4]); c.ratio = nexus::screen::q16(row.values[5]);
+    c.spread = nexus::screen::q16(row.values[6]); c.drift = nexus::screen::q16(row.values[7]);
     for (u32 k = city::first; k < nexus::city::restyle_end; ++k)
         if (!nexus::screen::same(frame.nodes[k], nexus::screen::restyled(k, state, c, false))) return false;
     return true;
 }
+
+// The first moving node of a kind (of a param, for those that read one), or 0.
+u32 first_of(u32 kind, i32 param = -1) {
+    for (u32 k = city::restyle_end; k < city::node_count; ++k)
+        if (city::kind[k] == kind && (param < 0 || city::param[k] == static_cast<u32>(param))) return k;
+    return 0;
+}
+// A row entry's value in the middle of step s of n.
+i32 middle(u32 s, u32 n) { return static_cast<i32>((2u * s + 1u) * (0x80000000u / (2u * n))); }
 
 // Rest, then check that nothing changes for two seconds.
 bool still(const i32 (&slots)[8], u32 serial) {
@@ -388,20 +403,22 @@ int main() {
     // While notes are held: the train runs and comes round, the fans turn, the dish swings, the
     // craft bobs, the lights blink and windows flare. Measured at the default, at every control
     // up, at every control down, and at the most flaring (bright 0, swell 100), notes changing.
-    const double settings[6][8] = {
+    const double settings[7][8] = {
         {0, .22, .46, .28, .45, 0, .80, 0},
         {1, 1, 1, 1, 1, 1, 1, 1},
         {0, 0, 0, 0, 0, 0, 0, 0},
         {0, .22, 0, .28, .45, 1, 1, 0},
         {0, .22, 1, .28, 1, 1, .8, .6},      // night, the craft up and bobbing, every ring
         {.5, .5, .5, .5, .5, .5, .5, .5},
+        {0, .22, .46, .28, .45, 1, .8, .6},  // with the Shift row at 100: every car, the sign flickering, the craft wobbling
     };
     // Each setting twice: the envelope unknown (the windows flare), then known, Tyrell's (they glow with it).
     u32 flight_points = 0, flight_nodes = 0;
-    for (int k = 0; k < 12; ++k) {
-        if (k == 6) { amp.attack = 12416 << 16; amp.decay = 32640 << 16; amp.sustain = 29490 << 16; amp.release = 21632 << 16; }
+    for (int k = 0; k < 14; ++k) {
+        if (k == 7) { amp.attack = 12416 << 16; amp.decay = 32640 << 16; amp.sustain = 29490 << 16; amp.release = 21632 << 16; }
+        for (int j = 0; j < 8; ++j) row.values[j] = k % 7 == 6 ? 0x7fffffff : defaults[j];
         i32 s[8];
-        slots_of(settings[k % 6], s);
+        slots_of(settings[k % 7], s);
         for (int f = 0; f < 150; ++f) step(s, 0, 20 + k);
         u32 points = 0, most = 0, nodes = 0, most_nodes = 0;
         train_appeared = 0;
@@ -420,7 +437,7 @@ int main() {
             expect(opxy::draw::valid(frame), "a frame in flight is invalid");
         }
         std::printf("setting %d%s: %.1f points (%.1f nodes) changed a frame on average, at most %u points "
-                    "(%u nodes); the train came round %u times\n", k % 6, k < 6 ? "" : " (the envelope known)",
+                    "(%u nodes); the train came round %u times\n", k % 7, k < 7 ? "" : " (the envelope known)",
                     points / double(length), nodes / double(length),
                     static_cast<unsigned>(most), static_cast<unsigned>(most_nodes), static_cast<unsigned>(train_appeared));
         expect(most <= most_points, "a frame in flight changes more points than the budget");
@@ -429,6 +446,7 @@ int main() {
         if (most > flight_points) flight_points = most;
         if (most_nodes > flight_nodes) flight_nodes = most_nodes;
     }
+    for (int j = 0; j < 8; ++j) row.values[j] = defaults[j];
     amp.attack = amp.decay = amp.sustain = amp.release = opxy::draw::envelope_unavailable;
     std::printf("in flight: at most %u points and %u nodes changed a frame (the header's bars included)\n",
                 static_cast<unsigned>(flight_points), static_cast<unsigned>(flight_nodes));
@@ -439,11 +457,11 @@ int main() {
         i32 s[8];
         slots_of(tyrell, s);
         u32 most = 0, most_turning_nodes = 0;
-        for (int f = 0; f < 675; ++f) {
-            const int k = (f / 75) % 9;                         // each control in turn, and sine, swept up and down
+        for (int f = 0; f < 1200; ++f) {
+            const int k = (f / 75) % 16;                        // each control in turn, and the Shift row's, swept up and down
             const int v = f % 75 < 38 ? (f % 75) * 56 : (74 - f % 75) * 56;
             if (k < 8) s[k] = v > 2047 ? 0x7fffffff : v << 20;
-            else row.values[0] = v > 2047 ? 0x7fffffff : v << 20;
+            else row.values[k - 8] = v > 2047 ? 0x7fffffff : v << 20;
             const Change c = step(s, 2, 900 + f / 50);
             check_train();
             check_cars();
@@ -451,8 +469,8 @@ int main() {
             if (c.points > most) most = c.points;
             if (c.nodes > most_turning_nodes) most_turning_nodes = c.nodes;
         }
-        row.values[0] = defaults[0];
-        std::printf("turning controls and sine while the train runs: at most %u points and %u nodes changed a frame\n",
+        for (int j = 0; j < 8; ++j) row.values[j] = defaults[j];
+        std::printf("turning controls and the Shift row while the train runs: at most %u points and %u nodes changed a frame\n",
                     static_cast<unsigned>(most), static_cast<unsigned>(most_turning_nodes));
         expect(most <= most_points, "turning a control while the train runs changes more points than the budget");
         expect(still(s, 950), "the screen changes after the train stops");
@@ -724,6 +742,245 @@ int main() {
         }
         expect(fan_turns == fan_frames * city::fans, "the fans miss a frame while held");
         expect(still(slots, 1200), "the fans don't stop once released");
+    }
+
+    // The round parts: the roof's (the helipad's ring, each fan's rim, well and hub) SVG ellipses, or outlines
+    // of points in make_panel.py's --round paths fallback; the ball, its sheen and its glint bound circles.
+    {
+        std::printf("round parts: %u ellipses, %u still circles, %u bound circles\n", static_cast<unsigned>(city::ellipses),
+                    static_cast<unsigned>(city::circles), static_cast<unsigned>(city::bound_circles));
+        expect(city::ellipses == 0 || city::ellipses == 3 * (city::fans + city::ducts) + 1,
+               "the roof's round parts aren't each an ellipse");
+        expect(city::bound_circles == 3, "the ball isn't three bound circles");
+    }
+
+    // Octave slides the ball along its spire, its rings with it: each of its four steps a place of its own, higher
+    // as octave rises; there within half a second, a half pixel at a time, then still. The ball's circles only
+    // move: never turned or scaled.
+    {
+        i32 s[8];
+        for (int j = 0; j < 8; ++j) s[j] = slots[j];
+        s[5] = 0x7fffffff;                                 // every ring shown
+        const u32 ball = first_of(city::orb, 0);
+        expect(ball != 0, "no ball");
+        i32 last = 1 << 30;
+        for (u32 step_ = 0; step_ < 4; ++step_) {
+            row.values[1] = middle(step_, 4);
+            const i32 want = (city::home_y[ball] + city::ball_step[step_]) * unit;
+            int frames = 0;
+            while (frame.nodes[ball].y != want && frames < 60) {
+                const Change c = step(s, 0, 1500);
+                expect(c.points <= most_points && c.nodes <= nexus::screen::most_nodes + 8, "the ball's move is over the budget");
+                for (u32 k = city::restyle_end; k < city::node_count; ++k)
+                    if (city::kind[k] == city::orb && !hidden(frame.nodes[k]) && !hidden(before.nodes[k]))
+                        expect(frame.nodes[k].y - before.nodes[k].y <= 3 * unit && before.nodes[k].y - frame.nodes[k].y <= 3 * unit,
+                               "the ball jumps");
+                ++frames;
+            }
+            expect(frames <= 16, "the ball takes more than half a second to reach octave's step");
+            expect(still(s, 1500), "the screen changes at rest while octave is set");
+            const i32 y = frame.nodes[ball].y;
+            expect(y == want, "the ball isn't at octave's step");
+            expect(y < last, "the ball doesn't rise as octave does");
+            for (u32 k = city::restyle_end; k < city::node_count; ++k) {
+                if (city::kind[k] != city::orb) continue;
+                const opxy::draw::Node& n = frame.nodes[k];
+                expect(!hidden(n), "a part of the ball is hidden");
+                expect(n.y - city::home_y[k] * unit == y - city::home_y[ball] * unit, "a part of the ball or a ring is left behind");
+                expect(n.scale == unit && n.cos == unit && n.sin == 0, "the ball's circles turn or scale");
+            }
+            std::printf("octave step %u: the ball %d px from its rest, settled in %d frames\n", static_cast<unsigned>(step_),
+                        static_cast<int>((y - city::home_y[ball] * unit) / unit), frames);
+            last = y;
+        }
+        row.values[1] = defaults[1];
+        expect(still(slots, 1501), "the screen changes at rest");
+    }
+
+    // Ratio turns the dish and its rings as one: each of its eight steps a way of its own, clockwise as ratio
+    // rises; there within half a second, then still.
+    {
+        const u32 dish = first_of(city::dish);
+        i32 last = -unit - 1;
+        for (u32 step_ = 0; step_ < 8; ++step_) {
+            row.values[5] = middle(step_, 8);
+            expect(still(slots, 1550), "the screen changes at rest while ratio is set");
+            const opxy::draw::Node& n = frame.nodes[dish];
+            for (u32 k = dish; k < city::node_count && city::kind[k] == city::dish; ++k)
+                if (!hidden(frame.nodes[k])) expect(frame.nodes[k].sin == n.sin && frame.nodes[k].cos == n.cos, "the dish's parts turn apart");
+            expect(n.sin > last, "the dish doesn't turn clockwise as ratio rises");
+            std::printf("ratio step %u: the dish at %.1f degrees\n", static_cast<unsigned>(step_), std::atan2(n.sin, n.cos) * 57.29578);
+            last = n.sin;
+        }
+        // a step's turn, eased: within half a second, each frame within the budgets
+        row.values[5] = middle(0, 8);
+        int frames = 0;
+        while (!(frames > 0 && anything(changed()) == 0) && frames < 60) {
+            const Change c = step(slots, 0, 1551);
+            expect(c.points <= most_points, "the dish's turn changes more points than the budget");
+            ++frames;
+        }
+        std::printf("ratio from its top step to its bottom: the dish turned in %d frames\n", frames - 1);
+        expect(frames <= 17, "the dish takes more than half a second to turn to ratio's step");
+        row.values[5] = defaults[5];
+        expect(still(slots, 1552), "the screen changes at rest");
+    }
+
+    // Spread brings in the road's cars: two at 0, more as it rises, all eight at 100, each where it shows at rest
+    // (make_panel.py places them so); still at rest.
+    {
+        nexus::display_reset(state);
+        step(slots, 0, 1600);
+        u32 last = 0;
+        for (int v = 0; v <= 100; v += 10) {
+            row.values[6] = v == 100 ? 0x7fffffff : v * 21474836;
+            expect(still(slots, 1600), "the screen changes at rest while spread is set");
+            u32 shown = 0;
+            for (u32 k = city::restyle_end; k < city::node_count; ++k)
+                if (city::kind[k] == city::car && !hidden(frame.nodes[k])) ++shown;
+            expect(shown >= last, "a car goes as spread rises");
+            if (v == 0) expect(shown == 2, "spread 0 doesn't show two cars");
+            if (v == 100) expect(shown == city::cars, "spread 100 doesn't show every car");
+            if (v % 50 == 0) std::printf("spread %d: %u cars\n", v, static_cast<unsigned>(shown));
+            last = shown;
+        }
+        row.values[6] = defaults[6];
+        expect(still(slots, 1601), "the screen changes at rest");
+    }
+
+    // Noise, balance and drift change nothing at rest: they show only while notes are held.
+    {
+        expect(still(slots, 1650), "the screen changes at rest");
+        nexus::Frame base;
+        std::memcpy(&base, &frame, sizeof frame);
+        for (int e = 3; e <= 7; e += (e == 4 ? 3 : 1)) {   // noise, balance, drift
+            for (int end = 0; end < 2; ++end) {
+                row.values[e] = end ? 0x7fffffff : 0;
+                expect(still(slots, 1650), "the screen changes at rest");
+                expect(!std::memcmp(frame.nodes, base.nodes, sizeof frame.nodes), "noise, balance or drift changes the screen at rest");
+            }
+            row.values[e] = defaults[e];
+        }
+    }
+
+    // Balance sets the right-hand block's fans' speeds while notes are held, layer I's (fan 1) and layer II's (fan 2):
+    // equal at 50; toward 0 layer II's slows almost to a stop, toward 100 layer I's.
+    for (int b = 0; b < 3; ++b) {
+        row.values[4] = b == 0 ? 0 : b == 1 ? 0x40000000 : 0x7fffffff;
+        for (int f = 0; f < 40; ++f) step(slots, 1, 1700);
+        u32 turned[city::fans] = {0, 0, 0};
+        for (int f = 0; f < 100; ++f) {
+            step(slots, 1, 1700);
+            for (u32 k = 0; k < city::fans; ++k) turned[k] += ((frame.paths[k].key - 1) - (before.paths[k].key - 1)) & 0xffffu;
+        }
+        std::printf("balance %d: the fans turned %.2f, %.2f and %.2f turns in 100 frames\n", b * 50, turned[0] / 65536.0,
+                    turned[1] / 65536.0, turned[2] / 65536.0);
+        if (b == 1) expect(turned[1] == turned[2], "the right-hand fans differ at balance 50");
+        if (b == 0) expect(turned[2] * 8 < turned[1], "layer II's fan doesn't slow almost to a stop at balance 0");
+        if (b == 2) expect(turned[1] * 8 < turned[2], "layer I's fan doesn't slow almost to a stop at balance 100");
+        expect(turned[1] && turned[2], "a fan stops while notes are held");
+    }
+    row.values[4] = defaults[4];
+    expect(still(slots, 1701), "the fans don't stop once released");
+
+    // Drift wobbles the craft while it hovers and notes are held: steady at 0; at 100 it bobs, sways and tilts,
+    // slowly, a half pixel or a degree at a time; steady again once released.
+    {
+        i32 s[8];
+        for (int j = 0; j < 8; ++j) s[j] = slots[j];
+        s[7] = 0x4ccccccc;                                 // bite 60: hovering
+        const u32 craft = first_of(city::craft);
+        for (int d = 0; d < 2; ++d) {
+            row.values[7] = d ? 0x7fffffff : 0;
+            for (int f = 0; f < 60; ++f) step(s, 1, 1750);
+            u32 moves = 0;
+            i32 low = 1 << 30, high = -(1 << 30), left = 1 << 30, right = -(1 << 30), tilt = 0;
+            for (int f = 0; f < 400; ++f) {
+                step(s, 1, 1750);
+                const opxy::draw::Node &a = before.nodes[craft], &n = frame.nodes[craft];
+                if (a.x != n.x || a.y != n.y || a.sin != n.sin) {
+                    ++moves;
+                    expect(n.x - a.x <= unit && a.x - n.x <= unit && n.y - a.y <= unit && a.y - n.y <= unit,
+                           "the craft wobbles in jumps");
+                }
+                if (n.y < low) low = n.y;
+                if (n.y > high) high = n.y;
+                if (n.x < left) left = n.x;
+                if (n.x > right) right = n.x;
+                if ((n.sin < 0 ? -n.sin : n.sin) > tilt) tilt = n.sin < 0 ? -n.sin : n.sin;
+            }
+            std::printf("drift %d: the craft moved in %u of 400 frames, %.1f px up and down, %.1f across, tilting %.1f degrees\n",
+                        d * 100, static_cast<unsigned>(moves), (high - low) / 1024.0, (right - left) / 1024.0,
+                        std::asin(tilt / 1024.0) * 57.29578);
+            if (!d) expect(moves == 0, "the craft wobbles at drift 0");
+            if (d) {
+                expect(moves >= 20 && moves <= 300, "the craft doesn't wobble slowly at drift 100");
+                expect(high - low >= 3 * unit && right - left >= 2 * unit && tilt > 0, "the craft doesn't bob, sway and tilt at drift 100");
+            }
+        }
+        row.values[7] = defaults[7];
+        expect(still(s, 1751), "the craft doesn't settle once released");
+    }
+
+    // Noise flickers the neon sign while notes are held: steady at 0, now and then at Tyrell's 6, often at 100;
+    // steady at rest.
+    {
+        u32 flickers[3] = {0, 0, 0};
+        const i32 noise[3] = {0, defaults[3], 0x7fffffff};
+        for (int v = 0; v < 3; ++v) {
+            row.values[3] = noise[v];
+            for (int f = 0; f < 60; ++f) step(slots, 1, 1800);
+            for (int f = 0; f < 300; ++f) {
+                step(slots, 1, 1800);
+                bool flicker = false;
+                for (u32 k = city::restyle_end; k < city::node_count; ++k)
+                    if (city::kind[k] == city::sign && frame.nodes[k].shade != before.nodes[k].shade) flicker = true;
+                if (flicker) ++flickers[v];
+            }
+            expect(still(slots, 1801), "the sign doesn't settle once released");
+        }
+        std::printf("noise 0, 6 and 100: the sign flickered in %u, %u and %u of 300 frames\n", static_cast<unsigned>(flickers[0]),
+                    static_cast<unsigned>(flickers[1]), static_cast<unsigned>(flickers[2]));
+        expect(flickers[0] == 0, "the sign flickers at noise 0");
+        expect(flickers[1] > 0 && flickers[1] * 3 < flickers[2], "the sign doesn't flicker more as noise rises");
+        expect(flickers[2] >= 60, "the sign doesn't flicker often at noise 100");
+        row.values[3] = defaults[3];
+    }
+
+    // The aircraft warning lights blink slowly while notes are held, each on for about a quarter of a second in
+    // two; the duct fans step through their blade poses, one of each shown at a time and each a step on from the
+    // last; both still at rest.
+    {
+        const u32 warning = first_of(city::warning), duct = first_of(city::vane);
+        expect(warning && duct, "no warning lights or duct fans");
+        for (int f = 0; f < 60; ++f) step(slots, 1, 1850);
+        u32 blinks = 0, lit = 0, steps[8] = {0}, shown_at[8];
+        for (u32 j = 0; j < city::ducts; ++j) shown_at[j] = 99;
+        const int length = 620;                            // 20 s
+        for (int f = 0; f < length; ++f) {
+            step(slots, 1, 1850);
+            const opxy::draw::Node &a = before.nodes[warning], &n = frame.nodes[warning];
+            if (n.shade == city::slot[city::high[warning]]) ++lit;
+            if (a.shade == city::slot[city::high[warning]] && n.shade != a.shade) ++blinks;
+            for (u32 j = 0; j < city::ducts; ++j) {
+                u32 shown = 0, pose = 0;
+                for (u32 k = duct; k < city::node_count && city::kind[k] == city::vane; ++k)
+                    if (static_cast<u32>(city::param[k] >> 2) == j && !hidden(frame.nodes[k])) { ++shown; pose = city::param[k] & 3u; }
+                expect(shown == 1, "a duct fan shows other than one pose");
+                if (shown_at[j] != 99 && pose != shown_at[j]) {
+                    expect(pose == (shown_at[j] + 1) % city::vane_poses, "a duct fan's blades skip a pose");
+                    ++steps[j];
+                }
+                shown_at[j] = pose;
+            }
+        }
+        std::printf("held 20 s: a warning light blinked %u times, lit %.0f%% of the time; the duct fans stepped %u, %u and %u "
+                    "times\n", static_cast<unsigned>(blinks), 100.0 * lit / length, static_cast<unsigned>(steps[0]),
+                    static_cast<unsigned>(steps[1]), static_cast<unsigned>(steps[2]));
+        expect(blinks >= 8 && blinks <= 12, "the warning lights don't blink slowly");
+        expect(lit * 100 >= 8u * length && lit * 100 <= 20u * length, "the warning lights aren't on a quarter of a second in two");
+        for (u32 j = 0; j < city::ducts; ++j) expect(steps[j] >= 60, "a duct fan's blades don't turn while held");
+        expect(still(slots, 1851), "the warning lights or duct fans don't stop once released");
     }
 
     // Released, everything eases to a stop and then nothing changes.
