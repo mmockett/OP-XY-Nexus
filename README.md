@@ -1,11 +1,15 @@
 # Nexus
 
+![Nexus's screen with Tyrell playing: a monorail train crosses an isometric city at night, windows glow with each chord and rooftop fans turn, as bright rises and fog rolls in over the far towers](docs/screens/nexus.gif)
+
 A two-layer polysynth for the OP-XY, after the Yamaha CS-80, built with the
 [Open-XY SDK](https://github.com/etcetc000/open-xy). Every note is two
 complete synths played together, a few cents apart, each with its own pair
 of resonant filters. Swell makes a held note bloom like brass, bite gives it
 the CS-80's bright blip, ring modulation turns it to bells, and the CS-80's
 own chorus moves it across the stereo field.
+
+Listen: [Tyrell](docs/audio/tyrell.m4a), slow brass chords with a lead, in stereo.
 
 **Status:** v1.0.0. Nexus plays on the OP-XY, and its CPU is measured on the
 device.
