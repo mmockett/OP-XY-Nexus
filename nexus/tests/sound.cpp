@@ -1,6 +1,7 @@
 // Nexus's sound checks, compiled for the host and run by python sdk.py test --machine <folder>.
 #include "../engine.cpp"
 #include "presets.h"
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -35,6 +36,7 @@ double trace[2][64 * 700];   // the left side of the last two single notes, for 
 struct Result {
     double peak_left, peak_right, energy, difference, crossings, voice_peak;
     double early, late, early_slope, late_slope;   // the left side's energy and its first difference's, before and after `release_at`
+    double held, held_count;                       // both sides' energy from block 300 (0.44 s) on, and its samples
     bool bounded, mono;
 };
 
@@ -51,7 +53,7 @@ Result play(const double (&c)[16], const int* notes, int count, int blocks, int 
         nexus::initialize(voices[v], shared, static_cast<u32>(v + 1));
         nexus::start(voices[v], shared, static_cast<u32>(v + 1));
     }
-    Result r = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, true};
+    Result r = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, true};
     i32 out[2 * frames];
     double last = 0;
     const int split = release_at >= 0 ? release_at : blocks / 2;
@@ -78,6 +80,7 @@ Result play(const double (&c)[16], const int* notes, int count, int blocks, int 
             if (-rr > r.peak_right) r.peak_right = -rr;
             r.energy += l * l + rr * rr;
             r.difference += (l - rr) * (l - rr);
+            if (b >= 300 && (release_at < 0 || b < release_at)) { r.held += l * l + rr * rr; r.held_count += 2; }
             if (slot >= 0 && b < 700) trace[slot][b * frames + i] = l;
             if ((l > 0) != (last > 0)) r.crossings += 1;
             // after the first 100 blocks: the level and the brightness (first difference), either side of the split
@@ -120,6 +123,16 @@ int main() {
     const int one[1] = {-9};
     const int a4[1] = {0};
 
+    // Each preset's single note (C4, held 2 s): its peak on each side, and its level while held (RMS of both
+    // sides from 0.44 s on, before the OP-XY's amp envelope), in dB against Tyrell's.
+    double tyrell_rms = 0;
+    for (unsigned k = 0; k < preset_count; ++k) {
+        const Result r = play(presets[k].c, one, 1, 1400);
+        const double rms = r.held_count ? std::sqrt(r.held / r.held_count) : 0;
+        if (k == 0) tyrell_rms = rms;
+        std::printf("%-13s one note peaks at %.3f / %.3f, RMS %.4f (%+.1f dB against Tyrell)\n", presets[k].name,
+                    r.peak_left, r.peak_right, rms, 20 * std::log10((rms + 1e-12) / tyrell_rms));
+    }
     // Every preset sounds, stays under the declared peak, and an eight-note chord sits near Hexagon's levels.
     for (unsigned k = 0; k < preset_count; ++k) {
         const Result r = play(presets[k].c, chord, 8, 1400);

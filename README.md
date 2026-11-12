@@ -92,6 +92,7 @@ The OP-XY's filter (M3) and LFO (M4) are off in every preset.
 | Preset | Role | The idea | Amp: attack / decay / sustain / release | Sends: reverb, delay | CPU a voice, est. |
 | --- | --- | --- | --- | --- | --- |
 | Tyrell | brass | Saw in both layers 3 cents apart, a dark filter that swells over about a second and closes as the note is let go, the chorus and spread wide. The default | 0.36 s / 0.68 s / 90% / 1.9 s | 60, 0 | 4.0% |
+| Afterglow | swell | The second layer an octave up and rung at 1, every note opening with the full blip, then a slow swell and a long tail that darkens as it fades | 2.7 s / 0.59 s / 90% / 7.9 s | 75, 20 | 4.4% |
 | Long Strings | pad | Slow saws further apart, a softer swell, more drift, chorus and spread | 0.94 s / 0.51 s / 90% / 3.8 s | 60, 0 | 4.0% |
 | Glass Choir | pad | Sines over a quiet saw, the second layer an octave up and rung at a fifth, bright and still | 0.51 s / 0.51 s / 80% / 3.3 s | 70, 0 | 5.2% |
 | Toy Bells | percussion | Sines alone, rung at a ratio of 3.5, no swell | 0 s / 1.4 s / 0% / 1.8 s | 50, 20 | 2.7% |
@@ -102,7 +103,6 @@ The OP-XY's filter (M3) and LFO (M4) are off in every preset.
 | High Rise | pad | A saw with a second layer an octave up and a little quieter, bright and open, a sine underneath for body: chords that shimmer over the band | 0.61 s / 0.62 s / 85% / 4.5 s | 65, 25 | 4.8% |
 | Vowels | choir | Both filters resonant and close together, two peaks like a voice's, the vowel opening as the swell rises. Turn bright to change the vowel | 0.51 s / 0.59 s / 90% / 3 s | 60, 10 | 4.5% |
 | Ember | pad | Saw and square together, the square's width moving slowly, the CS-80's chorus deep, a soft swell: an organ-like string pad | 0.79 s / 0.62 s / 85% / 5 s | 55, 10 | 4.8% |
-| Afterglow | swell | The fullest bloom: saws wide apart, far apart in the field, a long attack and a long tail that darkens as it fades | 2.7 s / 0.59 s / 90% / 7.9 s | 75, 20 | 4.0% |
 | Vapor Choir | choir | Resonant saws with the second layer an octave up, a vibrato that arrives late, breath and the widest chorus and spread: a choir across the whole field | 0.94 s / 0.62 s / 85% / 5 s | 75, 0 | 4.7% |
 | Ice Tower | glass | Sines alone, the second two octaves up and ringing at 2.6, struck and fading, spread wide: glass bells | 0 s / 2.6 s / 18% / 4.5 s | 65, 30 | 3.0% |
 | Undercity | bass | A saw with an octave under it, mono, a resonant filter that growls open as the note is held | 0.01 s / 0.35 s / 65% / 0.48 s | 10, 0 | 3.0% |

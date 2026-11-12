@@ -38,6 +38,8 @@ SHIFT = ["sine", "octave", "lowcut", "noise", "balance", "ratio", "spread", "dri
 # amp: attack s (to full level), decay s (to the sustain level), sustain 0..1, release s (to silence),
 #      or "words" to keep four words as they are. sends: reverb and delay, 0..100: the player's, not
 #      the preset's (an OP-XY synth preset doesn't keep the track's FX I and FX II sends).
+# params and row, when given, are the eight engine words and the Shift row's four as a preset saved on the
+# OP-XY holds them: the file keeps them exactly, and they must agree with the controls (within a step).
 TABLE = [
     dict(name="Tyrell", file="default", role="brass", was="Tyrell",
          idea="Saw in both layers 3 cents apart, a dark filter that swells over about a second and closes as "
@@ -45,6 +47,16 @@ TABLE = [
          controls=dict(shape=0, detune=22, bright=46, reso=28, chorus=45, ring=0, swell=80, bite=0,
                        sine=0, octave="8ft", lowcut=0, noise=6, balance=50, ratio="1.5", spread=40, drift=25),
          amp=(0.35, 1.6, 0.9, 1.9), sends=(60, 0)),
+    dict(name="Afterglow", role="swell", was="Afterglow",
+         idea="The second layer an octave up and rung at 1, every note "
+              "opening with the full blip, then a slow swell and a long tail that darkens as it fades",
+         controls=dict(shape=0, detune=36, bright=37, reso=31, chorus=65, ring=47, swell=96, bite=100,
+                       sine=0, octave="4ft", lowcut=0, noise=12, balance=50, ratio="1", spread=59, drift=23),
+         # the OP-XY's own words, as the preset saved on it holds them (the controls above round to within
+         # one step of each), its amp envelope and its Shift row
+         params=[0, 11795, 12123, 10157, 21299, 15401, 31457, 32767],
+         amp=dict(attack=18304, decay=32128, sustain=29490, release=8320), row=[256, 17152, 12332, 375],
+         sends=(75, 20)),
     dict(name="Long Strings", role="pad", was="Long Strings",
          idea="Slow saws further apart, a softer swell, more drift, chorus and spread",
          controls=dict(shape=0, detune=60, bright=42, reso=10, chorus=40, ring=0, swell=35, bite=0,
@@ -101,12 +113,6 @@ TABLE = [
          controls=dict(shape=56, detune=32, bright=36, reso=22, chorus=62, ring=0, swell=40, bite=0,
                        sine=0, octave="8ft", lowcut=0, noise=5, balance=50, ratio="1.5", spread=40, drift=30),
          amp=(0.8, 0.6, 0.85, 5.0), sends=(55, 10)),
-    dict(name="Afterglow", role="swell", was="Afterglow",
-         idea="The fullest bloom: saws wide apart, far apart in the field, a long attack and a long tail "
-              "that darkens as it fades",
-         controls=dict(shape=0, detune=66, bright=36, reso=30, chorus=65, ring=0, swell=100, bite=0,
-                       sine=0, octave="8ft", lowcut=0, noise=12, balance=50, ratio="1.5", spread=75, drift=50),
-         amp=(2.6, 0.6, 0.9, 8.0), sends=(75, 20)),
     dict(name="Vapor Choir", role="choir", was="Vapor Choir",
          idea="Resonant saws with the second layer an octave up, a vibrato that arrives late, breath and the "
               "widest chorus and spread: a choir across the whole field",
@@ -173,6 +179,8 @@ def nearest(times, target):
 def amp_words(amp, defaults):
     if amp == "words":
         return dict(defaults)
+    if isinstance(amp, dict):           # the words themselves
+        return dict(amp)
     a, d, s, r = amp
     sustain = round(s * 32767)
     return dict(attack=nearest(lambda i: attack_s(i << 8), a),
@@ -251,7 +259,7 @@ def shift_params(definition, values):
     return [bits >> (15 * w) & 0x7FFF for w in range(4)]
 
 
-def preset_file(definition, values, amp):
+def preset_file(definition, values, amp, params=None, row=None):
     """A version 4 OP-XY preset, as the SDK's template (tooling/default_preset.json) writes the init,
     with the eight controls, the amp envelope and the Shift row in one sample-less region. The OP-XY's
     filter (M3) and LFO (M4) are off, as in the init."""
@@ -259,7 +267,7 @@ def preset_file(definition, values, amp):
         "engine": {"bendrange": 8191, "highpass": 0,
                    "modulation": {s: {"amount": 16384, "target": 0}
                                   for s in ("aftertouch", "modwheel", "pitchbend", "velocity")},
-                   "params": [math.floor(values[k] * 32767 + 0.5) for k in PAGE],
+                   "params": params or [math.floor(values[k] * 32767 + 0.5) for k in PAGE],
                    "playmode": "poly", "portamento.amount": 0, "portamento.type": 0, "transpose": 0,
                    "tuning.root": 0, "tuning.scale": 0, "velocity.sensitivity": 0, "volume": 16384, "width": 0},
         "envelope": {"amp": {k: amp[k] for k in ("attack", "decay", "release", "sustain")},
@@ -267,7 +275,7 @@ def preset_file(definition, values, amp):
         "fx": {"active": False, "params": [0, 0, 0, 0, 0, 32767, 0, 0], "type": "svf"},
         "lfo": {"active": False, "params": [0] * 8, "type": "value"},
         "octave": 0, "platform": "OP-XY",
-        "regions": [{"hikey": 53, "model": "fm slap", "params": shift_params(definition, values)}],
+        "regions": [{"hikey": 53, "model": "fm slap", "params": row or shift_params(definition, values)}],
         "type": definition["id"], "version": 4}
 
 
@@ -308,7 +316,14 @@ def main():
         presets[preset["name"]] = values
         amp = amp_words(preset["amp"], defaults)
         seconds = amp_seconds(amp)
-        files[slug(preset)] = preset_file(definition, values, amp)
+        params, row = preset.get("params"), preset.get("row")
+        if params:
+            near = [math.floor(values[k] * 32767 + 0.5) for k in PAGE]
+            if any(abs(a - b) > 330 for a, b in zip(params, near)):
+                sys.exit(f"{preset['name']}: its words {params} don't match its controls {near}")
+        if row and row != shift_params(definition, values):
+            sys.exit(f"{preset['name']}: its Shift row {row} isn't its controls' {shift_params(definition, values)}")
+        files[slug(preset)] = preset_file(definition, values, amp, params, row)
         rows.append((preset, seconds))
         a, d, s, r = seconds
         print(f"{preset['name']:14} {a:7.3f}: {amp['attack']:5d} {d:7.3f}: {amp['decay']:5d} "

@@ -217,6 +217,24 @@
       "spread": 0.4,
       "drift": 0.25
     },
+    "Afterglow": {
+      "shape": 0.0,
+      "detune": 0.36,
+      "bright": 0.37,
+      "reso": 0.31,
+      "chorus": 0.65,
+      "ring": 0.47,
+      "swell": 0.96,
+      "bite": 1.0,
+      "sine": 0.0,
+      "octave": 0.625,
+      "lowcut": 0.0,
+      "noise": 0.12,
+      "balance": 0.5,
+      "ratio": 0.1875,
+      "spread": 0.59,
+      "drift": 0.23
+    },
     "Long Strings": {
       "shape": 0.0,
       "detune": 0.6,
@@ -396,24 +414,6 @@
       "ratio": 0.3125,
       "spread": 0.4,
       "drift": 0.3
-    },
-    "Afterglow": {
-      "shape": 0.0,
-      "detune": 0.66,
-      "bright": 0.36,
-      "reso": 0.3,
-      "chorus": 0.65,
-      "ring": 0.0,
-      "swell": 1.0,
-      "bite": 0.0,
-      "sine": 0.0,
-      "octave": 0.375,
-      "lowcut": 0.0,
-      "noise": 0.12,
-      "balance": 0.5,
-      "ratio": 0.3125,
-      "spread": 0.75,
-      "drift": 0.5
     },
     "Vapor Choir": {
       "shape": 0.0,
