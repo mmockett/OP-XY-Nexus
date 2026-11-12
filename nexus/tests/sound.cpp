@@ -94,7 +94,7 @@ Result play(const double (&c)[16], const int* notes, int count, int blocks, int 
 
 // The fundamental's power at A4 in the last 0.1 s of the trace (a whole 44 cycles), by Goertzel.
 double fundamental(const double* x, int length) {
-    const double c = 1.9601331556824833;   // 2 cos(2 pi 440 / 44100)
+    const double c = 1.99607132886337;     // 2 cos(2 pi 440 / 44100)
     double s1 = 0, s2 = 0;
     for (int i = length - 4410; i < length; ++i) {
         const double s = x[i] + c * s1 - s2;
@@ -212,11 +212,13 @@ int main() {
     expect(bright_at[1][0] > 2 * bright_at[0][0], "bite does not start the note brighter");
     expect(bright_at[1][1] < 1.5 * bright_at[0][1], "bite does not fall back to the swell");
 
-    // Every control changes the sound between its ends, the Shift row's too; ratio with ring up.
+    // Every control changes the sound between its ends, the Shift row's too; ratio with ring up,
+    // noise with the filter open.
     for (unsigned k = 0; k < controls; ++k) {
         double lo[16], hi[16];
         for (unsigned j = 0; j < controls; ++j) lo[j] = hi[j] = dry[j];
-        if (k == 13) lo[5] = hi[5] = .5;
+        if (k == 13) lo[5] = hi[5] = .5;     // ratio with the ring on
+        if (k == 11) lo[2] = hi[2] = 1;      // noise with the filter open
         lo[k] = 0;
         hi[k] = 1;
         const Result a = play(lo, one, 1, 500, 0), b = play(hi, one, 1, 500, 1);

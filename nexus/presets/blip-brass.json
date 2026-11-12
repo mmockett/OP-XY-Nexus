@@ -22,13 +22,13 @@
     },
     "params": [
       0,
-      4915,
-      19005,
       9830,
-      6553,
-      0,
       16384,
-      0
+      13107,
+      11468,
+      0,
+      11468,
+      27852
     ],
     "playmode": "poly",
     "portamento.amount": 0,
@@ -42,10 +42,10 @@
   },
   "envelope": {
     "amp": {
-      "attack": 6528,
-      "decay": 24448,
-      "release": 25728,
-      "sustain": 29490
+      "attack": 640,
+      "decay": 29824,
+      "release": 30848,
+      "sustain": 27852
     },
     "filter": {
       "attack": 0,
@@ -89,10 +89,10 @@
       "hikey": 53,
       "model": "fm slap",
       "params": [
-        128,
-        16768,
-        8268,
-        322
+        16512,
+        16908,
+        24652,
+        323
       ]
     }
   ],
