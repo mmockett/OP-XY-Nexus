@@ -11,7 +11,9 @@
 // What the controls do to it:
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves of dark dots drift apart
-//   bright  the sky darkens from a light grey to near black, and more windows and background lights are lit
+//   bright  more windows and background lights are lit, and the sky dusks: to a mid grey above the horizon
+//           and a lighter one below it, behind the haze towers, which keep their light greys; the
+//           clouds a grey lighter than the sky
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
 //   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes

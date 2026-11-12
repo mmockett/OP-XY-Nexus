@@ -3,7 +3,8 @@
 // whole travel, the reshaping outlines (the fans' blades, the advert's lines) at every pose;
 // nothing changing at rest, Shift held or not; the train and the road's cars running their loops
 // and coming and going only where they can't be seen; the fans turning a little every frame while
-// notes are held; bright darkening the sky; sine setting the advert's lines with Shift held or
+// notes are held; bright darkening the sky (keeping the haze towers lighter) and the windows running
+// down every face; sine setting the advert's lines with Shift held or
 // not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
 // those, at a cost by their points), while notes are held and while controls turn; and how much
 // of the screen is filled, which the device pays for every frame.
@@ -467,34 +468,79 @@ int main() {
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
     }
 
-    // Bright darkens the sky and the clouds, from a light grey at 0 to near black at 100, never
-    // brightening as it rises; at every setting the lit windows stand out from the sky.
+    // Bright darkens the sky by its square, from grey 12 at 0 to a mid grey at 100 above the horizon and a
+    // lighter one below it, the city's glow behind the haze towers; the clouds darken with it, a grey
+    // lighter than the sky above the horizon. Never brightening as it rises, never near black: the haze
+    // towers (still greys 10..12) stay lighter than the sky behind them, and the dark faces (2..4) darker.
     {
         i32 s[8];
         slots_of(tyrell, s);
-        u32 sky = 0, cloud = 0;
-        for (u32 k = city::first; k < city::restyle_end; ++k)
-            if (city::kind[k] == city::sky) (city::low[k] == 12 ? sky : cloud) = k;
-        expect(sky && cloud, "no sky or no clouds");
-        u32 last = 99;
+        u32 skies = 0, clouds = 0, last[nexus::Frame::node_count];
+        for (u32 k = city::first; k < city::restyle_end; ++k) {
+            if (city::kind[k] == city::sky) ++(city::low[k] == 12 ? skies : clouds);
+            last[k] = 99;
+        }
+        expect(skies && clouds, "no sky or no clouds");
+        u32 night = 0, glow = 0, cloud = 0;
         for (int v = 0; v < 128; ++v) {
             s[2] = v == 127 ? 0x7fffffff : v << 24;
             expect(still(s, 1000), "the screen changes at rest while bright is set");
             expect(settled(s), "the sky hasn't settled");
-            const u32 shade = frame.nodes[sky].shade;
-            expect(shade <= last, "the sky brightens as bright rises");
-            expect(frame.nodes[cloud].shade >= shade && frame.nodes[cloud].shade <= shade + 2, "the clouds part from the sky");
-            expect(shade + 2 <= 14, "the lit windows don't stand out from the sky");
-            for (u32 k = city::first; k < city::restyle_end; ++k)
-                if (city::kind[k] == city::sky && city::low[k] == 12) expect(frame.nodes[k].shade == shade, "the sky in two greys");
-            last = shade;
-            if (v == 0) expect(shade == 12, "the sky at bright 0 isn't light grey");
-            if (v == 127) expect(shade <= 1, "the sky at bright 100 isn't near black");
+            u32 darkest = 99, lightest = 0, darkest_cloud = 99;
+            for (u32 k = city::first; k < city::restyle_end; ++k) {
+                if (city::kind[k] != city::sky) continue;
+                const u32 shade = frame.nodes[k].shade;
+                expect(shade <= last[k], "the sky brightens as bright rises");
+                last[k] = shade;
+                if (v == 0) expect(shade == city::low[k], "the sky at bright 0 isn't its day grey");
+                expect(shade >= 5, "the sky goes too dark");
+                if (city::low[k] != 12) {
+                    if (shade < darkest_cloud) darkest_cloud = shade;
+                } else {
+                    if (shade < darkest) darkest = shade;
+                    if (shade > lightest) lightest = shade;
+                }
+            }
+            expect(darkest_cloud > darkest, "the clouds merge into the sky");
+            if (v == 127) {
+                night = darkest;
+                glow = lightest;
+                cloud = darkest_cloud;
+            }
         }
-        std::printf("bright 0 to 100: the sky from grey 12 to grey %u\n", static_cast<unsigned>(last));
+        // at night the sky sits between the dark faces (2..4) and the haze towers' darkest (10), and is
+        // lighter low behind the haze
+        expect(night >= 5 && glow > night && glow < 10, "the sky at night merges with the city");
+        std::printf("bright 0 to 100: the sky from grey 12 to %u above the horizon and %u below it; the clouds to %u\n",
+                    static_cast<unsigned>(night), static_cast<unsigned>(glow), static_cast<unsigned>(cloud));
+        // Bright jumped from 0 to 100 at rest: the windows, background lights and sky restyle over a few
+        // frames, each within the budgets, and settle within a second.
+        slots_of(tyrell, s);
+        s[2] = 0;
+        expect(still(s, 1002), "the screen changes at rest");
+        s[2] = 0x7fffffff;
+        int frames = 0;
+        u32 most = 0, most_count = 0;
+        while (!settled(s) && frames < 100) {
+            const Change c = step(s, 0, 1002);
+            if (c.points > most) most = c.points;
+            if (c.nodes > most_count) most_count = c.nodes;
+            ++frames;
+        }
+        std::printf("bright 0 to 100 at once: settled in %d frames (%d ms), at most %u points and %u nodes a frame\n",
+                    frames, frames * 33, static_cast<unsigned>(most), static_cast<unsigned>(most_count));
+        expect(frames <= 31, "bright takes more than a second to settle");
+        expect(most <= most_points, "bright's restyle changes more points in a frame than the budget");
         slots_of(tyrell, s);
         expect(still(s, 1001), "the screen changes at rest");
     }
+
+    // The windows run down every face as far as it is seen (make_panel.py measures it): far more show
+    // than the authored rows alone gave (276), and they cover each column of windows' seen height.
+    std::printf("windows: %u shown, covering %.1f%% of each column's seen height\n",
+                static_cast<unsigned>(city::windows_shown), city::window_cover / 10.0);
+    expect(city::window_cover >= 990, "the windows stop short of where their faces are seen");
+    expect(city::windows_shown >= 400, "too few windows show");
 
     // Sine sets the advert's lines, Shift held or not: longer as it rises, and still at rest.
     for (int held = 0; held < 2; ++held) {

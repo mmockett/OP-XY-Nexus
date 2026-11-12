@@ -83,8 +83,12 @@ NEAR = (9, 6, 3)
 MID = (9, 7, 4)
 FAR = (10, 8, 5)
 HAZE = (12, 11, 10)
-SKY = 12
-SKY_NIGHT, CLOUD_NIGHT = 1, 2     # the sky's and the clouds' greys at bright 100 (display.cpp's sky())
+SKY = 12                          # the sky's grey at bright 0
+# As bright rises (by its square) the sky darkens toward NIGHT, and the clouds with it a grey lighter.
+# Below HORIZON the sky darkens only to GLOW, the city's light low behind the haze towers. The haze
+# towers keep their light greys, so they stay lighter than the sky behind them at every setting.
+NIGHT, GLOW, HORIZON = 6, 9, 72
+CLOUD = 8                         # the clouds' grey at bright 100, all of each cloud alike
 
 
 def hash32(i, j, k):
@@ -208,16 +212,17 @@ def tower(fx, fy, a, b, y1, z0=0):
     return Box(x1 - a, x1, y1 - b, y1, min(z0, z1 - 200), z1)
 
 
+FOUND = {}                        # the first pass's findings
+SEEN = {}                         # (seed, column) -> rows of windows seen (City.grid's first pass)
 JITTER = 0.0                      # a test of the output's steadiness: nudge every point this much
 
 
 class Item:
-    def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None, restyle=None):
+    def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None):
         # Points to 1/10000 px: the platforms' sines and cosines differ in their last bits, and an
         # outline that just touches another must touch, or not, the same way on every machine.
         pts = [(round(x + JITTER, 4), round(y - JITTER, 4)) for x, y in pts]
         self.kind, self.pts, self.tone, self.occ, self.width, self.node = kind, pts, tone, occ, width, node
-        self.restyle = restyle          # a fill drawn as nodes, a piece each, that restyle (the sky)
 
 
 class Solid:
@@ -226,15 +231,15 @@ class Solid:
     def __init__(self, name, box, items=None):
         self.name, self.box, self.items = name, box, items or []
 
-    def fill(self, pts, tone, occ=None, restyle=None):
+    def fill(self, pts, tone, occ=None, sky=None):
         """A static filled outline. Unless told, it hides what is behind it when it is big and
-        solid enough that cutting it out of what is behind saves more fill than it costs. With
-        `restyle`, what is seen of it is drawn as nodes of that kind instead."""
+        solid enough that cutting it out of what is behind saves more fill than it costs."""
         if occ is None:
             a = abs(area(pts))
             xs, ys = [p[0] for p in pts], [p[1] for p in pts]
             occ = a >= OCCLUDE and a >= 0.3 * (max(xs) - min(xs)) * (max(ys) - min(ys))
-        self.items.append(Item("fill", list(pts), tone, occ, restyle=restyle))
+        self.items.append(Item("fill", list(pts), tone, occ))
+        self.items[-1].sky = sky        # (greys at bright 0 and 100, and below the horizon): seen, nodes that darken
 
     def line(self, pts, tone, width):
         self.items.append(Item("line", list(pts), tone, width=width))
@@ -262,8 +267,13 @@ def solid(name, box):
 
 
 # ------------------------------------------------------------------ shapes in face coordinates
+def half(p):
+    """A point on half pixels: shorter numbers in the artwork, a quarter pixel at most from the design."""
+    return (round(p[0] * 2) / 2, round(p[1] * 2) / 2)
+
+
 def quad(f, u, w, du, dw):
-    return [f(u, w), f(u + du, w), f(u + du, w + dw), f(u, w + dw)]
+    return [half(f(u, w)), half(f(u + du, w)), half(f(u + du, w + dw)), half(f(u, w + dw))]
 
 
 def column(f, u, w, du, dw, n, pitch, spine=0.5):
@@ -371,28 +381,87 @@ class City:
         SOLIDS.clear()
         self.masts, self.lights, self.fans, self.rings = [], [], [], []
 
-    # windows: each column (or run) a lit strip, a node of 4 points; the face's own grey is laid
-    # over the gaps between rows, so one strip shows as a column of windows
+    # windows: each column (or two) a lit strip, a node of 4 (or 12) points; the face's own grey is
+    # laid over the gaps between rows, so one strip shows as a column of windows. Each column runs
+    # down as far as its face is seen: a first pass draws them all to the screen's foot and finds
+    # where each column, and each gap between two, is last seen (SEEN); the second runs each strip
+    # just past there, out of sight, and joins two columns by a bridge under their feet, out of
+    # sight too. A strip hides the face behind it, so the face isn't filled twice.
     def grid(self, s, f, u0, w0, cols, rows, du, dw, pu, pw, face, lit, seed):
-        tall = (rows - 1) * pw + dw - 0.5
+        a = du - 0.5                               # a strip's width: its paint's stroke adds the rest
+        face_at = f
+        f = lambda u, w: tuple(round(v * 2) / 2 for v in face_at(u, w))   # on half pixels: shorter numbers
+        if not SEEN:
+            for c in range(cols):
+                u = u0 + c * pu
+                for key, uu, ww in ((("c", seed, c), u, a), (("g", seed, c), u + a, pu - a)):
+                    if key[0] == "g" and c + 1 == cols:
+                        continue
+                    w = w0
+                    while f(uu, w)[1] < BOTTOM + 2 and w < w0 + 400:
+                        w += 0.5
+                    s.node(quad(f, uu, w0, ww, w - w0), kind="window", low=1, high=lit, tone=lit,
+                           probe=[(key, [(w0 + 0.5 * k, quad(f, uu, w0 + 0.5 * k, ww, 0.5))
+                                         for k in range(int((w - w0) * 2))])],
+                           grid=(f, uu, w0, a, dw, pw, rows))      # for window_stats()
+            # and the mask's spine, either side: where it joins each gap between rows to the next
+            for side, us in (("l", u0 - 1.4), ("r", u0 + (cols - 1) * pu + du + 0.5 - 0.7)):
+                n = int((BOTTOM - f(us, w0)[1]) // pw) + 2
+                s.node(quad(f, us, w0 + dw, 0.7, n * pw), kind="window", low=1, high=lit, tone=lit,
+                       probe=[((side, seed, r), [(0, quad(f, us, w0 + dw + r * pw, 0.7, pw))]) for r in range(n)])
+            return
+        foot = [SEEN.get(("c", seed, c)) for c in range(cols)]
+        if not any(foot):
+            return
+        # a node within 63 px of its origin: strips longer than this are cut into chunks at a gap between rows
+        longest = 118 - (pu + du) / 2
+
+        def node(pts, key):
+            s.node(pts, kind="window", low=max(face - 1, 1), high=lit, param=hash32(*key, 5) & 255, tone=lit,
+                   occ=True)
+
         c = 0
         while c < cols:
+            pair = c + 1 < cols and foot[c] and foot[c + 1]
+            if not foot[c]:
+                c += 1
+                continue
             u = u0 + c * pu
-            if rows > 1 and c + 1 < cols:
-                # two columns as one outline, joined by a bridge in the first gap between rows, under the mask
-                a0, a1, b0, b1 = u, u + du - 0.5, u + pu, u + pu + du - 0.5
-                g0, g1 = w0 + dw + 0.4, w0 + dw + 1.0
-                strip = [f(a0, w0), f(a1, w0), f(a1, g0), f(b0, g0), f(b0, w0), f(b1, w0), f(b1, w0 + tall),
-                         f(b0, w0 + tall), f(b0, g1), f(a1, g1), f(a1, w0 + tall), f(a0, w0 + tall)]
-                step = 2
+            ends = [foot[c]] + ([foot[c + 1], SEEN.get(("g", seed, c), w0)] if pair else [])
+            bottom = max(ends) + 0.25                  # the bridge's top, or a lone strip's foot, out of sight
+            r0 = 0
+            while w0 + r0 * pw + longest < bottom + 1.0:   # chunks above the last: rows r0.. r0 + n - 1
+                n = int((longest - dw) // pw) + 1
+                w, tall = w0 + r0 * pw, (n - 1) * pw + dw - 0.5
+                for k in ((c, c + 1) if pair else (c,)):
+                    node(quad(f, u0 + k * pu, w, a, tall), (seed, k + 100 * (r0 // n + 1)))
+                r0 += n
+            w = w0 + r0 * pw
+            if pair:
+                b0, b1 = u + pu, u + pu + a
+                g0, g1 = bottom, bottom + 0.75
+                node([f(u, w), f(u + a, w), f(u + a, g0), f(b0, g0), f(b0, w), f(b1, w), f(b1, g1), f(u, g1)],
+                     (seed, c))
+                c += 2
             else:
-                strip = quad(f, u, w0, du - 0.5, tall)
-                step = 1
-            s.node(strip, kind="window", low=max(face - 1, 1), high=lit, param=hash32(seed, c, 5) & 255, tone=lit)
-            c += step
-        if rows > 1:
-            width = (cols - 1) * pu + du
-            s.fill(column(f, u0 - 1.4, w0 + dw, width + 1.9, pw - dw, rows - 1, pw, spine=0.7), face, occ=False)
+                node(quad(f, u, w, a, bottom + 1.25 - w), (seed, c))
+                c += 1
+        deepest = max(x for x in foot if x)
+        gaps = sum(1 for r in range(1, 200) if w0 + (r - 1) * pw + dw < deepest)
+        width = (cols - 1) * pu + du
+        # the mask: runs of gaps joined by a spine on whichever side is seen between them, at most 15
+        # gaps (60 points) to an outline; a gap no spine reaches is an outline of its own
+        r0 = 0
+        while r0 < gaps:
+            side = next((d for d in ("l", "r") if SEEN.get((d, seed, r0)) is not None), "l")
+            n = 1
+            while r0 + n < gaps and n < 15 and SEEN.get((side, seed, r0 + n - 1)) is not None:
+                n += 1
+            pts = column(lambda u, w: (u, w), u0 - 1.4, w0 + dw + r0 * pw, width + 1.9, pw - dw, n, pw, spine=0.7)
+            if side == "r":                        # the same comb, its spine on the right
+                pts = [(2 * u0 - 2.8 + width + 1.9 - u, w) for u, w in pts]
+            s.fill([f(u, w) for u, w in pts], face, occ=False)
+            r0 += n
 
     def band(self, s, f, u0, w0, n, du, dw, pu, face, lit, seed, per=4):
         """A row of windows across a face, lit a run of `per` at a time."""
@@ -414,6 +483,11 @@ class City:
             s.fill([bx.T(p, p), bx.T(bx.a - p, p), bx.T(bx.a - p, bx.b - p), bx.T(p, bx.b - p)],
                    inner if inner is not None else shades[0] - 3)
         return s, bx
+
+    def cornice(self, s, bx, w, tone):
+        """A ledge round a tower's two seen faces, just under its roof: a thin ribbon, stroked."""
+        s.line([half(p) for p in (bx.L(0, w), bx.L(bx.a, w), bx.R(bx.b, w), bx.R(bx.b, w + 0.5), bx.L(bx.a, w + 0.5),
+                                  bx.L(0, w + 0.5))], tone, 0.5)
 
     def box_on(self, name, base, u, v, a, b, h, shades=(9, 6, 3), lid=None):
         """A box standing on another's roof (vents, plant rooms)."""
@@ -463,13 +537,11 @@ def city():
 
     # --- the sky, clouds and the haze far behind
     sky = solid("sky", Box(-3000, -2990, -3000, -2990, 0, 1))
-    # the sky and its clouds darken as bright rises: what is seen of them is drawn as nodes that restyle
-    sky.fill([(0, TOP), (480, TOP), (480, BOTTOM), (0, BOTTOM)], SKY, occ=True,
-             restyle=dict(kind="sky", low=SKY, high=SKY_NIGHT, tone=SKY))
+    sky.fill([(0, TOP), (480, TOP), (480, BOTTOM), (0, BOTTOM)], SKY, occ=True, sky=(SKY, NIGHT, GLOW))
     for k, pts in enumerate([ellipse(360, 58, 34, 30, 16), ellipse(318, 46, 20, 12, 12), ellipse(398, 44, 22, 14, 12),
                              ellipse(30, 44, 26, 9, 12), ellipse(150, 42, 18, 7, 12)]):
         c = solid(f"cloud{k}", Box(-2900 + 2 * k, -2899 + 2 * k, -2900, -2899, 0, 1))
-        c.fill(pts, 13, occ=True, restyle=dict(kind="sky", low=13, high=CLOUD_NIGHT, tone=13))
+        c.fill(pts, 13, occ=True, sky=(13, CLOUD, None))
     glows = []
     haze = [  # (fx, fy, a, b, spire)
         (16, 76, 18, 12, 0), (52, 56, 12, 10, 0), (126, 56, 12, 10, 1), (152, 70, 14, 10, 0), (260, 46, 18, 16, 0),
@@ -522,6 +594,7 @@ def city():
     g(s, bx.L, 3, 6, 4, 6, 2.5, 2.4, 7, 6, 5, 14, 360)
     # E: a dark tower beyond the advert tower
     s, bx = C.building("E", 312, 46, 24, 22, -150, (9, 6, 3))
+    C.cornice(s, bx, 3, 10)
     g(s, bx.L, 3, 7, 4, 5, 2.4, 2.4, 5.5, 5.5, 6, 14, 420)
     g(s, bx.R, 3, 7, 3, 5, 2.4, 2.4, 6, 5.5, 3, 13, 440)
 
@@ -635,6 +708,7 @@ def city():
     s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
     # far right: a tall tower with a grid of windows
     s, bx = C.building("R2", 474, 40, 18, 22, -200, (9, 7, 3), parapet=0)
+    C.cornice(s, bx, 2.5, 11)
     g(s, bx.L, 2.5, 6, 3, 9, 2.4, 2.4, 5, 5, 7, 14, 760)
     g(s, bx.R, 2.5, 6, 4, 9, 2.4, 2.4, 5, 5, 3, 13, 780)
     # N: a tower in front of the helipad's foot, lit windows
@@ -643,6 +717,7 @@ def city():
     g(s, bx.R, 3, 6, 2, 6, 3, 2.4, 6, 6, 4, 13, 830)
     # M: a dark tower behind the second track
     s, bx = C.building("M", 402, 130, 22, 16, -84, NEAR)
+    C.cornice(s, bx, 2.5, 10)
     g(s, bx.L, 3, 6, 3, 7, 3, 2.4, 6.5, 6, 6, 14, 860)
     g(s, bx.R, 3, 6, 2, 7, 3, 2.4, 6.5, 6, 3, 13, 880)
 
@@ -674,10 +749,13 @@ def city():
     top, left, right = deck.faces()
     s.fill(top, 3, occ=True)
     s.fill(left, 5, occ=True)
-    for v, t_ in ((2, 8), (9, 8), (5.5, 2)):
-        s.fill([P(-160, v, 70), P(300, v, 70), P(300, v + 1, 70), P(-160, v + 1, 70)], t_)
-    s.fill([P(-160, 12, 70), P(300, 12, 70), P(300, 12, 69), P(-160, 12, 69)], 9)
+    # the rails and the deck's lip: thin ribbons, stroked, so they cost no fill
+    for v, t_ in ((2.25, 8), (9.25, 8), (5.75, 2)):
+        s.line([P(-160, v, 70), P(300, v, 70), P(300, v + 0.5, 70), P(-160, v + 0.5, 70)], t_, 0.5)
+    s.line([P(-160, 12, 69.75), P(300, 12, 69.75), P(300, 12, 69.25), P(-160, 12, 69.25)], 9, 0.5)
     s.fill([P(-160, 12, 64), P(300, 12, 64), P(300, 12, 62), P(-160, 12, 62)], 3)
+    # the deck's side in segments: a joint midway between each two piers, joined along the dark foot
+    s.fill(row(deck.L, 119.7, 1.5, 0.6, 6, 4, 80, spine=0.6), 3, occ=False)
     for k, x in enumerate((-80, 0, 80, 160, 240)):
         p = solid(f"pier{k}", Box(x, x + 8, 4, 8, 0, 54))
         p.faces((7, 5, 2), sides=(False, True, True))
@@ -726,8 +804,8 @@ def city():
     for k in range(SUN_STRIPES):
         top = hz + 2.2 + k * 2.7                                                  # the k-th from the horizon
         bottom = top + 1.4 - k * 0.15
-        half = math.sqrt(r * r - ((top + bottom) / 2 - hz) ** 2)                  # the mirrored disc's width there
-        s.node(quad(sb.L, 19 - half, top, 2 * half, bottom - top), kind="stripe", param=SUN_STRIPES - 1 - k,
+        wide = math.sqrt(r * r - ((top + bottom) / 2 - hz) ** 2)                  # the mirrored disc's half width there
+        s.node([sb.L(19 - wide, top), sb.L(19 + wide, top), sb.L(19 + wide, bottom), sb.L(19 - wide, bottom)], kind="stripe", param=SUN_STRIPES - 1 - k,
                tone=8, keep=True)
     s.node([sb.L(37.3, 3), sb.L(38, 3), sb.L(38, 76), sb.L(37.3, 76)], kind="neon", low=4, high=15, tone=12)
     C.lights.append((s, *sb.T(1, 11), 1.0, 90))
@@ -821,6 +899,13 @@ def city():
 def screen_poly(pts):
     p = Polygon(pts)
     return p if p.is_valid else p.buffer(0)
+
+
+def surface(g):
+    """Only the parts of a clipped region with area: a clip can leave a stray edge or point."""
+    if g.geom_type == "GeometryCollection":
+        return shapely.union_all([q for q in g.geoms if q.geom_type in ("Polygon", "MultiPolygon")])
+    return g
 
 
 def behind(a, b):
@@ -936,21 +1021,44 @@ def compose():
     dropped = 0.0
     for s, it in reversed(flat):
         if it.kind == "node":
+            if it.node.get("probe"):    # the first pass: which rows of this column's windows show
+                seen = screen_poly(it.pts).intersection(STAGE)
+                if not cover.is_empty:
+                    seen = seen.difference(cover)
+                it.node["seen"] = seen
+                for key, slices in it.node["probe"]:
+                    for w, q in slices:
+                        # (not at a simple fraction: an edge through a slice's middle must not round either way by machine)
+                        if seen.intersection(Polygon(q)).area >= 0.37 * abs(area(q)):
+                            FOUND[key] = max(FOUND.get(key, 0), w + 0.5)
             out.append(dict(kind="node", item=it, solid=s))
             if it.node.get("occ"):      # a node always shown, always in place: it hides what is behind it
                 g = screen_poly(it.pts).buffer(-0.3, join_style="mitre")
                 cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
             continue
         g = screen_poly(it.pts)
-        vis = g.intersection(STAGE, grid_size=GRID)
+        vis = surface(g.intersection(STAGE, grid_size=GRID))
         if not cover.is_empty:
             vis = vis.difference(cover, grid_size=GRID)
-        if it.restyle:
-            # nodes, each within 63 px of its origin: cut into cells first
-            ps = [q for cx in range(0, 480, 120) for cy in (TOP, TOP + 91)
-                  for q in pieces(vis.intersection(rect(cx, cy, cx + 120, cy + 91), grid_size=GRID))]
-            for q in reversed(ps):
-                out.append(dict(kind="node", item=Item("node", q, node=dict(it.restyle)), solid=s))
+        if getattr(it, "sky", None):
+            # nodes that darken: above the horizon to the night's grey, below it to the glow's; each
+            # within 63 px of its origin
+            day, night, glow = it.sky
+            bands = ((TOP, HORIZON, night), (HORIZON, BOTTOM, glow)) if glow else ((TOP, BOTTOM, night),)
+            for y0, y1, end in bands:
+                band = []
+                for q in pieces(vis.intersection(rect(0, y0, 480, y1), grid_size=GRID)):
+                    if abs(area(q)) < 4:        # a sliver at the header's edge: not worth a node
+                        continue
+                    xs, ys = [p[0] for p in q], [p[1] for p in q]
+                    if max(xs) - min(xs) <= 120 and max(ys) - min(ys) <= 120:
+                        band.append(q)
+                    else:       # too big for a node: cut into cells
+                        band += [c for x0 in range(0, 480, 100) for c in
+                                 pieces(Polygon(q).intersection(rect(x0, y0, x0 + 100, y1), grid_size=GRID))]
+                for q in band:
+                        out.append(dict(kind="node", item=Item("node", q, node=dict(kind="sky", low=day, high=end,
+                                                                                   tone=day)), solid=s))
             if it.occ:
                 cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
             continue
@@ -1106,6 +1214,11 @@ class Node:
 
 
 def build():
+    # the first pass finds how far down each column of windows shows; the second draws them so
+    SEEN.clear()
+    FOUND.clear()
+    compose()
+    SEEN.update(FOUND)
     solids, out, dropped = compose()
     nodes = []
     for e in out:
@@ -1149,12 +1262,12 @@ def write_panel(sc):
             t = grey(n.tone)
             if n.path is not None:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
-            elif n.keep:              # its own paint, kept: a fill alone, as the still artwork's
-                paint = f'fill="{t}"'
             elif n.outline:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
             else:
-                paint = f'fill="{t}" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
+                # a fill alone: kept, it is the still artwork's paint; repainted, the palette lends the
+                # fill (and its stroke), so an authored stroke would only be bytes
+                paint = f'fill="{t}"'
             out.append(f'<path id="{ID}_node_{n.index}" d="{path_d(n.rel)}" {paint}/>')
     for k in range(16):
         out.append(f'<circle id="{ID}_palette_{k}" cx="640" cy="0" r="1" fill="{grey(k)}" stroke="{grey(k)}" '
@@ -1240,6 +1353,37 @@ def road_course(sc):
         n.spec["course"] = (lo, hi)
 
 
+def window_stats():
+    """Windows before (each grid's authored rows) and now (down to where its face is last seen): how many
+    show (at least half seen), and how much of the seen height of each column of windows they cover."""
+    SEEN.clear()
+    FOUND.clear()
+    _, out, _ = compose()
+    shown = [0, 0]
+    height = [0.0, 0.0, 0.0]          # seen height of the columns, and of it with windows before and now
+    for e in out:
+        spec = e["item"].node if e["kind"] == "node" else {}
+        if "grid" not in spec or spec["probe"][0][0][0] != "c":
+            continue
+        f, u, w0, a, dw, pw, rows = spec["grid"]
+        seen = spec["seen"]
+        for r in range(200):
+            q = quad(f, u, w0 + r * pw, a, dw - 0.5)
+            if q[0][1] > BOTTOM:
+                break
+            if seen.intersection(Polygon(q)).area >= 0.53 * abs(area(q)):
+                shown[1] += 1
+                shown[0] += r < rows
+        for w, q in spec["probe"][0][1]:
+            if seen.intersection(Polygon(q)).area >= 0.37 * abs(area(q)):
+                height[0] += 0.5
+                height[1] += 0.5 if w < w0 + (rows - 1) * pw + dw else 0
+                height[2] += 0.5 if w < FOUND[spec["probe"][0][0]] else 0
+    SEEN.clear()
+    FOUND.clear()
+    return shown, height
+
+
 def write_tables(sc):
     nodes, paths = sc["nodes"], sc["paths"]
     n = len(nodes) + FIRST
@@ -1305,6 +1449,9 @@ def write_tables(sc):
          "// The still artwork's fill below the header and the header's own, px^2: the device fills",
          "// these every frame.",
          f"const opxy::i32 static_fill = {round(sc['fill'])}, header_fill = {HEADER_FILL};",
+         "// The windows: how many show (at least half seen), and how much of the height seen of each",
+         "// column of windows they cover, per mille: down to where its face is last seen.",
+         f"const opxy::u32 windows_shown = {sc['windows'][0][1]}, window_cover = {round(1000 * sc['windows'][1][2] / sc['windows'][1][0])};",
          "// The header's titles, definition.json's labels (the header lowercases them): the page's",
          "// controls by slot, then the Shift row's by entry.",
          "const char* const titles[8] = {" + ", ".join(json.dumps(t) for t in TITLES) + "};",
@@ -1409,6 +1556,8 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None)
         elif kind == "sand":
             dd = ((c["detune"] * SAND_DRIFT * 2) >> 16) / 2
             y += dd if p else -dd
+        elif kind == "sky":
+            shade = toward(lo, hi, (c["bright"] * c["bright"]) >> 16)
         elif kind == "ring":
             level = ring_level(c["ring"], p)
             if not level:
@@ -1416,8 +1565,6 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None)
             shade = lo + (level - 1) * (hi - lo) // 2
         elif kind == "light":
             shade = hi if ((clock + p * 4) & 1023) < 230 else lo
-        elif kind == "sky":
-            shade = toward(lo, hi, (c["bright"] * c["bright"]) >> 16)
         elif kind == "stripe":
             step = (c.get("lowcut", 0) * 100 + 32768) >> 16
             if step * (SUN_STRIPES + 1) > (p + 1) * 100:
@@ -1596,6 +1743,7 @@ def previews(out, sc):
 
 def main():
     sc = build()
+    sc["windows"] = window_stats()
     size, fill_static = write_panel(sc)
     sc["fill"] = fill_static
     sc["course"] = train_course(sc)
@@ -1624,6 +1772,9 @@ def main():
         by[k.kind][0] += 1
         by[k.kind][1] += len(k.rel)
     print(" ".join(f"{k}:{v[0]}n/{v[1]}p" for k, v in by.items()))
+    (before, now), (seen, had, has) = sc["windows"]
+    print(f"windows: {now} shown (the authored rows alone: {before}); {100 * has / seen:.0f}% of each column's seen "
+          f"height (the authored rows alone: {100 * had / seen:.0f}%)")
     if "--preview" in sys.argv:
         previews(sys.argv[sys.argv.index("--preview") + 1], sc)
 

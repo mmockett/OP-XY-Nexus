@@ -122,7 +122,7 @@ A dense isometric city in greys, drawn like pixel art: an elevated monorail
 crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
 tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
 with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
-fans, plant rooms and rows of windows, with pale towers in the haze behind.
+fans, plant rooms and windows down every face, with pale towers in the haze behind.
 Tops are light, sides mid and dark.
 
 At rest the city is still. While a note is held, a two-car train runs along
@@ -135,7 +135,7 @@ everything eases to a stop where it is.
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
-| bright | The sky darkens from a light grey to near black, and more windows and background lights are lit |
+| bright | More windows and background lights are lit, and the sky dusks to a mid grey, lighter low behind the haze, so the towers keep their shape |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |
