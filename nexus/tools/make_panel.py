@@ -18,8 +18,9 @@ Pure Python with shapely 2.2.0 (a prebuilt wheel); nothing is compiled.
 
 The city is still, so it is drawn once: every face is a filled outline, and
 each is clipped to what is actually seen of it, back to front, so the screen
-is filled about once over. What changes is a node: the fog (translucent white
-layers at four depths, re-shaded from the palette's white donors), lit
+is filled about once over. What changes is a node: the fog (one sheet of
+translucent white over the sky and the far towers, re-shaded from the palette's
+white donors), lit
 windows (short segments of each column, lit in a scattered order), background lights, the advert's text and pattern, the billboards, the
 hourglass's dots, neon edges, rings (a back half and a front half each, round
 their mast or the ball), blinking lights, the dish, a flying car over the
@@ -94,19 +95,14 @@ CLOUD = 2                         # the clouds: still, a shade off the black sky
 # The palette: ten of the greys for the nodes (display.cpp rounds any grey to the nearest of them, the
 # darker of two), then six donors of white fog at rising opacity, on the screen's 1/32 alpha steps.
 PALETTE_TONES = [1, 2, 4, 6, 8, 10, 12, 13, 14, 15]
-FOG_ALPHA = [2, 4, 6, 8, 12, 16]                       # 32nds, even: at most four decimals
+FOG_ALPHA = [4, 8, 12, 16, 20, 24]                     # 32nds: even, so at most four decimals; 24 the fullest
 FOG_DONOR = len(PALETTE_TONES)                         # the first fog donor's palette slot
 assert FOG_DONOR + len(FOG_ALPHA) == 16
-# The fog: translucent white layers at three depths, each drawn after what is behind it and before what
-# is nearer, so the far city pales as the fog thickens and the near city stays crisp. Bright sets their
-# opacity; at 0 they are hidden, a black sky over darker towers. Each layer: its band's top and foot on
-# screen at the left (px), how far its edges wave (px), its densest donor (0..5; the farther, the denser),
-# and its slope down to the right.
-FOG = [(36, 92, 4, 2, 0),         # the sky's glow, over the clouds and under the haze towers
-       (54, 108, 5, 5, 0),        # the haze over the far towers, thickest
-       (78, 108, 3, 3, 0.5),      # mist under the track, over the city behind it
-       (184, 216, 4, 2, 0)]       # low over the track and the road, under the blocks in front
-FOG_CELL = 120                    # each layer in cells this wide: a node stays within 63 px of its origin
+# The fog: one plain sheet of translucent white, the picture's width, from the header down past the last of
+# the far city seen, drawn after the sky and the far towers and before everything nearer, so the far city
+# pales as the fog thickens and the near city stays crisp. Bright sets its opacity; at 0 it is hidden, a
+# black sky over darker towers. Only what is seen of it is drawn (compose() cuts it), as one outline.
+FOG_POINTS = 40                   # the sheet's outline, at most
 
 
 def snap(t):
@@ -780,10 +776,11 @@ def city():
     top, left, right = deck.faces()
     s.fill(top, 3, occ=True)
     s.fill(left, 5, occ=True)
-    # the rails and the deck's lip: thin ribbons, stroked, so they cost no fill
-    for v, t_ in ((2.25, 8), (9.25, 8), (5.75, 2)):
-        s.line([P(-160, v, 70), P(300, v, 70), P(300, v + 0.5, 70), P(-160, v + 0.5, 70)], t_, 0.5)
-    s.line([P(-160, 12, 69.75), P(300, 12, 69.75), P(300, 12, 69.25), P(-160, 12, 69.25)], 9, 0.5)
+    # the rails and the deck's lip: thin filled ribbons, about 0.9 px. (Stroked, each long edge was drawn
+    # twice, once either side of the stroke, and the device pays for every row an edge crosses.)
+    for v, t_ in ((2.0, 8), (9.0, 8), (5.5, 2)):
+        s.fill([P(-160, v, 70), P(300, v, 70), P(300, v + 1, 70), P(-160, v + 1, 70)], t_, occ=False)
+    s.fill([P(-160, 12, 70), P(300, 12, 70), P(300, 12, 69), P(-160, 12, 69)], 9, occ=False)
     s.fill([P(-160, 12, 64), P(300, 12, 64), P(300, 12, 62), P(-160, 12, 62)], 3)
     # the deck's side in segments: a joint midway between each two piers, joined along the dark foot
     s.fill(row(deck.L, 119.7, 1.5, 0.6, 6, 4, 80, spine=0.6), 3, occ=False)
@@ -982,7 +979,7 @@ def order(solids):
     return out
 
 
-# The depth slices the fog sits between, back to front: the clouds, the haze, the city behind the track
+# The depth slices, back to front (the fog sits after the haze): the clouds, the haze, the city behind the track
 # (every solid not named here, the second viaduct among them), the track, and the blocks in front.
 TRACK = ("track", "beam", "pier", "train")
 FRONT = ("A", "sun", "fans", "L0", "dish", "Dd", "Bc", "Rf")
@@ -1003,7 +1000,7 @@ def slice_of(name):
 
 
 def layered(solids):
-    """The solids back to front, by slice, each fog layer after its slice: the order within a slice is
+    """The solids back to front, by slice, the fog after the haze: the order within a slice is
     order()'s, and no solid in a later slice is behind one in an earlier slice where they overlap."""
     hull = {id(s): shapely.union_all([reach(dict(kind="node", item=it)) if it.kind == "node" else screen_poly(it.pts)
                                       for it in s.items]) for s in solids}
@@ -1018,38 +1015,85 @@ def layered(solids):
     out = []
     for k in range(5):
         out += by[k]
-        if k < len(FOG):
-            out.append(fog(k))
+        if k == 1:
+            out.append(fog())
     return out
 
 
-def fog(layer):
-    """A fog layer: its band (FOG), with waving edges, as an item compose() cuts to what is seen of it."""
-    top, foot, wave, densest, slope = FOG[layer]
-
-    def edge(y, x, side):
-        return y + slope * x + wave * ((hash32(layer, x // 40, 61 + side) % 201) / 100 - 1)
-    xs = list(range(-40, 521, 40))
-    band = [(x, edge(top, x, 0)) for x in xs] + [(x, edge(foot, x, 1)) for x in reversed(xs)]
-    s = Solid(f"fog{layer}", Box(-5000, 5000, -999, -998, -5000, 5000))
-    s.items.append(Item("fogband", band, node=dict(kind="fog", param=layer, low=0, high=densest, tone=15, fog=True)))
+def fog():
+    """The fog sheet: an item compose() cuts to what is seen of it."""
+    s = Solid("fog", Box(-5000, 5000, -999, -998, -5000, 5000))
+    s.items.append(Item("fogband", [(0, TOP), (480, TOP), (480, BOTTOM), (0, BOTTOM)],
+                        node=dict(kind="fog", low=0, high=0, tone=15, fog=True, pivot=(0, TOP))))
     return s
 
 
-def fog_pieces(it, cover):
-    """What is seen of a fog band, with a pixel's margin under what hides it (no seam at its edges) and its
-    outline eased (fewer points), in cells FOG_CELL wide: each cell's piece a node display.cpp hides at
-    bright 0 and shades from its fog donors as bright rises (param: its layer; high: its densest donor).
-    Pieces of one band share their cut edges exactly and never overlap: they must not blend twice."""
-    band = surface(screen_poly(it.pts).intersection(STAGE))
-    seen = surface(band.difference(cover)) if not cover.is_empty else band
-    eased = surface(seen.buffer(1.0, join_style="mitre").simplify(1.5).buffer(0).intersection(band, grid_size=GRID))
-    out = []
-    for x0 in range(0, 480, FOG_CELL):
-        for q in pieces(surface(eased.intersection(rect(x0, TOP, x0 + FOG_CELL, BOTTOM), grid_size=GRID))):
-            if abs(area(q)) >= 6:
-                out.append(q)
-    return out
+def fog_sheet(far, cover):
+    """What is seen of the fog, as one outline: the picture's width from the header down to just past the
+    last of the far city (far) seen, less what hides it (cover). Its outline runs a little under what hides
+    it, so it shows no edge of its own anywhere: the sky and the far towers are fogged right up to the near
+    city. Where what is seen of it falls apart, thin bridges under the near towers join it into one outline,
+    and holes (near parts it surrounds) are filled; both are hidden, but drawn (and blended), so the outline
+    is then eased down to FOG_POINTS points by dropping, one at a time, the point that adds the least to it
+    and never uncovers what is seen. Returns its points and what is seen of it."""
+    far_seen = surface(far.intersection(STAGE).difference(cover))
+    foot = min(BOTTOM, math.ceil(far_seen.bounds[3]) + 1)
+    sheet = rect(0, TOP, 480, foot)
+    seen = surface(sheet.difference(cover, grid_size=GRID))
+    seen = shapely.union_all([g for g in getattr(seen, "geoms", [seen]) if g.area >= 0.5])
+    need = seen.buffer(0.4, join_style="mitre").intersection(sheet, grid_size=GRID)   # kept covered: no seam at its edges
+    # joined along the top row (under the header's foot where a tower rises into it), then any part still
+    # apart by its shortest way to the rest
+    body = shapely.union_all([seen.buffer(0.75, join_style="mitre"), rect(0, TOP, 480, TOP + 0.75)])
+    while body.geom_type == "MultiPolygon":
+        parts = sorted(body.geoms, key=lambda g: -g.area)
+        main, rest = parts[0], shapely.union_all(parts[1:])
+        body = shapely.union_all([body, shapely.shortest_line(main, rest).buffer(0.75, cap_style="square")])
+    body = surface(Polygon(body.exterior).intersection(sheet, grid_size=GRID))
+    pts = [tuple(v) for v in list(Polygon(body.exterior).exterior.coords)[:-1]]
+    if area(pts) < 0:
+        pts.reverse()
+
+    def cost(k):
+        """What dropping point k adds to the outline's area (less than 0: it takes some away), or None
+        when that would uncover what is seen or cross the outline."""
+        a_, b_, c_ = pts[k - 1], pts[k], pts[(k + 1) % len(pts)]
+        d = -cross(sub(b_, a_), sub(c_, b_)) / 2          # counter-clockwise: a left turn at b takes area
+        if d < 0 and Polygon([a_, b_, c_]).intersection(need).area > 0.01:
+            return None
+        return d
+
+    def crosses(k):
+        a_, c_ = pts[k - 1], pts[(k + 1) % len(pts)]
+        n = len(pts)
+        for j in range(n):
+            p_, q_ = pts[j], pts[(j + 1) % n]
+            if p_ in (a_, c_) or q_ in (a_, c_) or pts[k] in (p_, q_):
+                continue
+            if segments_cross(a_, c_, p_, q_):
+                return True
+        return False
+
+    known = [cost(k) for k in range(len(pts))]
+    while True:
+        dropped = False
+        for c, k in sorted((c, k) for k, c in enumerate(known) if c is not None):
+            if c > 0 and len(pts) <= FOG_POINTS:
+                break
+            if not crosses(k):
+                del pts[k]
+                del known[k]
+                n = len(pts)
+                for j in (k - 1, k):
+                    known[j % n] = cost(j % n)
+                dropped = True
+                break
+        if not dropped:
+            break
+    pts = tidy(pts, GRID)
+    assert pts is not None and len(pts) <= FOG_POINTS, "the fog sheet doesn't fit in one outline"
+    assert seen.difference(Polygon(pts)).area < 0.25, "the fog sheet misses some of what is seen of it"
+    return pts, seen
 
 
 def half_y(y):
@@ -1125,8 +1169,12 @@ def tidy(pts, step=None):
     return pts
 
 
+FOG_SEEN = []                     # what is seen of the fog (compose()), for the measures
+
+
 def compose():
     """The artwork's paths and nodes, in drawing order: static outlines clipped front to back."""
+    FOG_SEEN.clear()
     solids = layered(order(city()))
     flat = [(s, it) for s in solids for it in s.items]
     cover = Polygon()
@@ -1134,7 +1182,11 @@ def compose():
     dropped = 0.0
     for s, it in reversed(flat):
         if it.kind == "fogband":
-            out += [dict(kind="node", item=Item("node", q, node=dict(it.node)), solid=s) for q in fog_pieces(it, cover)]
+            far = shapely.union_all([screen_poly(i.pts) for b in solids if slice_of(b.name) <= 1 for i in b.items
+                                     if i.kind == "fill"])
+            pts, seen = fog_sheet(far, cover)
+            FOG_SEEN.append(seen)
+            out.append(dict(kind="node", item=Item("node", pts, node=dict(it.node)), solid=s))
             continue
         if it.kind == "node":
             if it.node.get("probe"):    # the first pass: which rows of this column's windows show
@@ -1160,7 +1212,7 @@ def compose():
         ps = pieces(vis)
         dropped += max(0.0, vis.area - sum(abs(area(p)) for p in ps))
         for p in reversed(ps):
-            out.append(dict(kind=it.kind, pts=p, tone=it.tone, width=it.width))
+            out.append(dict(kind=it.kind, pts=p, tone=it.tone, width=it.width, name=s.name))
         if it.occ:
             cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
     out.reverse()
@@ -1389,7 +1441,8 @@ def write_panel(sc):
             out.append(f'<path d="{path_d(e["pts"], still=True)}" fill="none" stroke="{grey(e["tone"])}" stroke-width="{num(e["width"])}"/>')
         else:
             n = e["node"]
-            check(n.rel, f"node {n.index} ({n.role})", 63)
+            # (the fog sheet spans the picture: a node's own outline has no limit, only a reshaping one's)
+            check(n.rel, f"node {n.index} ({n.role})", None if n.spec.get("fog") else 63)
             t = grey(n.tone)
             if n.path is not None:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
@@ -1735,7 +1788,7 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
         elif kind == "fog":
             if not c["bright"]:
                 continue
-            shade = ("fog", FOG_ALPHA[(c["bright"] * (hi + 1)) >> 16] / 32)
+            shade = ("fog", FOG_ALPHA[(c["bright"] * len(FOG_ALPHA)) >> 16] / 32)
         elif kind == "ring":
             level = ring_level(c["ring"], p & 1)
             if not level:

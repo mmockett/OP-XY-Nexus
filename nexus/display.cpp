@@ -11,9 +11,9 @@
 // What the controls do to it:
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves of dark dots drift apart
-//   bright  more windows and background lights are lit, in a scattered order, and white fog comes in: three
-//           translucent layers at different depths, each drawn over what is behind it and under what is
-//           nearer, thicker the farther it is; at 0 there is none, a black sky over darker towers
+//   bright  more windows and background lights are lit, in a scattered order, and a fog comes in: one plain
+//           sheet of translucent white over the sky and the far towers, under everything nearer, thicker as
+//           bright rises; at 0 there is none, a black sky over darker towers
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
 //   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes
@@ -47,6 +47,7 @@ const u32 fps_text = 16;
 
 const u32 budget = 200;                 // points of outlines changed a frame, at most
 const u32 most_nodes = 30;              // and nodes: many changed at once slow the device too
+const u32 most_busy = 10;               // and restyled nodes while notes sound or the glow fades: the glow's recolours
 const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
 const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round
 const i32 rise = 30;                    // how high the craft hovers at bite 100, px (make_panel.py's CRAFT_RISE)
@@ -111,11 +112,11 @@ static inline u32 between(u32 low, u32 high, u32 amount) {
     const u32 v = low + ((amount * (high - low + 1)) >> 16);
     return v > high ? high : v;
 }
-// A fog layer's donor for bright: none at 0, then each of its donors in turn up to its densest (high), the
-// palette's white at rising opacity.
-static inline Node fog(u32 k, u32 densest, u32 bright) {
+// The fog sheet for bright: hidden at 0, then the palette's white at rising opacity, its fog donors in turn
+// up to the fullest at 100.
+static inline Node fog(u32 k, u32 bright) {
     if (!bright) return parked();
-    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::fog_donor + ((bright * (densest + 1)) >> 16),
+    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::fog_donor + ((bright * city::fog_donors) >> 16),
                 fill_and_stroke);
 }
 // The advert's pattern for a shape: 1 ramps (the saw, to 30), 2 a checker (saw and pulse into the square,
@@ -175,7 +176,7 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
         const u32 level = ring_level(c.ring, p & 1u);
         return level ? home(k, low + (level - 1) * (high - low) / 2, (p & 2u) ? stroke : fill_and_stroke) : parked();
     }
-    case city::fog: return fog(k, high, c.bright);
+    case city::fog: return fog(k, c.bright);
     case city::stripe: {   // the sun's reflection, cleared from the bottom stripe up as lowcut's step rises
         const u32 step = (c.lowcut * 100u + 32768u) >> 16;
         return step * (city::sun_stripes + 1) <= (p + 1) * 100u ? home(k, 0, keep) : parked();
@@ -527,7 +528,11 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         ++count;
     }
     spent += reshape(state, frame, c, count);
-    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, count < most_nodes ? most_nodes - count : 0, spent);
+    // While notes sound or the glow fades, the restyling (the glow's windows, mostly) takes at most most_busy
+    // nodes a frame: the device pays for each changed node, on top of what moves.
+    const u32 room = count < most_nodes ? most_nodes - count : 0;
+    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, held || state.stage ? smallest(room, most_busy) : room,
+            spent);
     state.fresh = 0;
     readout(state, input, frame);
 

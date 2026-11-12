@@ -4,14 +4,6 @@
 <path d="M378.5,38 L376,44 L379,51 L387,56 L398,58 L398,48 L416,39 L417.5,38Z" fill="#181818"/>
 <path d="M12,38 L7.5,39.5 L4,44 L7.5,48.5 L9.5,49 L10,49 L12,50 L17,52 L30,53 L40,52 L40,50 L50,45 L54,47 L56,44 L52.5,39.5 L48,38Z" fill="#181818"/>
 <path d="M136,38 L134.5,38.5 L132,42 L134.5,45.5 L141,48 L150,49 L152,49 L152,38Z" fill="#181818"/>
-<path id="nexus_node_215" d="M-48,-28 L-48,-13.5 L-43,-13.5 L-39.5,-10 L-39.5,-4 L-43,-0.5 L-48,-0.5 L-47,2 L-45,2 L-44,28 L-29,27 L-29,11.5 L-25,9.5 L-21,-0.5 L-18,-2 L-13,0.5 L-13,4.5 L-9,6.5 L-9,-17.5 L10,-27 L49,-5.5 L49,-28Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_216" d="M14,0 L0,0 L0,8.5 L8,12.5 L8,50.5 L13,48 L14,41.5Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_217" d="M0,38.5 L8,42.5 L8,56 L23,56 L23,27.5 L22,27.5 L18.5,24 L18.5,18 L22,14.5 L23,14.5 L23,0 L0,0Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_218" d="M0,0 L3,1.5 L3,5.5 L11,13.5 L11,23.5 L15,25.5 L24,21 L29,23.5 L29,0Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_219" d="M0,7.5 L3,4.5 L3,0 L0,0Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_220" d="M5,0 L0,0 L0,2.5Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_221" d="M0,0 L0,11 L6,14 L10,12 L41,27.5 L41,12.5 L50,8 L61,13.5 L61,0Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_222" d="M9,53.5 L21,51.5 L21,12.5 L26,7.5 L26,0 L0,0 L9,4.5Z" fill="#FFFFFF" fill-opacity="0.5"/>
 <path id="nexus_node_142" d="M13.5,7 L13.5,8 L0,1 L0,0Z" fill="#D0D0D0"/>
 <path id="nexus_node_143" d="M13.5,7 L13.5,8 L0,1 L0,0Z" fill="#D0D0D0"/>
 <path d="M52,56 L60,52 L60,50 L50,45 L40,50Z" fill="#404040"/>
@@ -72,13 +64,7 @@
 <path id="nexus_node_163" d="M7.5,4 L7.5,5 L0,1 L0,0Z" fill="#D0D0D0"/>
 <path id="nexus_node_164" d="M7.5,4 L7.5,5 L0,1 L0,0Z" fill="#D0D0D0"/>
 <path id="nexus_node_165" d="M7.5,4 L7.5,5 L0,1 L0,0Z" fill="#D0D0D0"/>
-<path id="nexus_node_223" d="M39,8 L0,0 L0,2.5 L5,2.5 L8.5,6 L8.5,12 L5,15.5 L0,15.5 L1,18 L3,18 L4,47 L15,52.5 L15,56.5 L20,59 L39,59Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_224" d="M19,9.5 L19,0 L2,0 L0.5,0.5Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_225" d="M0,33.5 L5,31 L6,0 L0,0Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_226" d="M0,50.5 L13,44 L19,47 L23,45 L23,15.5 L22,15.5 L18.5,12 L18.5,6 L22,2.5 L23,2.5 L23,0 L0,2Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_227" d="M33,0 L8,1 L0,2 L0,11 L6,8 L21,15.5 L21,60.5 L33,62Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_228" d="M49,26.5 L49,4 L28,0.5 L0,2Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_229" d="M0,49.5 L12,55.5 L12,11.5 L17,9 L17,0 L13,0 L0,2Z" fill="#FFFFFF" fill-opacity="0.5"/>
+<path id="nexus_node_215" d="M457,0 L457,22 L427,7.5 L418,1 L399,10.5 L399,75 L391,76 L356,59 L337,62 L337,1 L289,1 L289,41.5 L288,48 L283,50 L283,12.5 L260,1 L209,2 L153,1 L153,162.5 L151,163 L143,159.5 L147,157.5 L147,109.5 L152,87 L141,81.5 L141,26.5 L126,19 L115,24.5 L115,145 L111,143.5 L111,90.5 L114,68 L103,62.5 L103,4.5 L61,1 L61,37 L10,12 L6,14 L0,11 L0,0Z" fill="#FFFFFF" fill-opacity="0.75"/>
 <path d="M88,50 L104,42 L96,38 L93,38 L93,38.5 L100,42 L88,48 L68,38 L64,38Z" fill="#707070"/>
 <path d="M88,50 L64,38 L60,38 L60,74 L62,75 L62,79 L88,92Z" fill="#484848"/>
 <path d="M104,42 L88,50 L88,92 L104,100Z" fill="#282828"/>
@@ -173,7 +159,7 @@
 <path d="M240,72 L284,50 L260,38 L256,38 L279,49.5 L240,69 L197,47.5 L216,38 L212,38 L192,48Z" fill="#606060"/>
 <path d="M192,144 L215.5,156 L215.5,147.5 L194.5,137 L194.5,53 L215.5,63.5 L215.5,60 L192,48Z" fill="#484848"/>
 <path d="M240,72 L215.5,60 L215.5,63.5 L236.5,74 L236.5,158 L215.5,147.5 L215.5,156 L240,168Z" fill="#484848"/>
-<path d="M192,220 L212,220 L212,196 L216,194 L216,186 L214,185 L214,180 L192,169Z" fill="#484848"/>
+<path d="M192,220 L212,220 L212,196 L216,194 L216,186 L224,190 L224,185 L192,169Z" fill="#484848"/>
 <path d="M276,88 L278,87.5 L278,139 L284,136 L284,50 L240,72 L240,168 L248,172 L248,102 L250,101.5 L250,173 L255,176 L255,99 L257,97.5 L257,177 L262,179 L262,95 L264,94.5 L264,180 L269,183 L269,92 L271,90.5 L271,184 L276,186Z" fill="#282828"/>
 <path d="M240,69 L279,49.5 L256,38 L254,38 L254,43 L242,49 L251,53.5 L251,57.5 L241,62.5 L232,58 L232,54 L240,50 L224,42 L224,38 L216,38 L197,47.5Z" fill="#404040"/>
 <path d="M236.5,74 L194.5,53 L194.5,137 L236.5,158Z" fill="#404040"/>
@@ -233,9 +219,9 @@
 <path d="M248,48 L248,46.5 L247,46.5 L244.5,48Z" fill="#181818"/>
 <path id="nexus_node_199" d="M6,2 L0.5,0.25 L0.5,0.75 L2,2 L6,2.5 L10,2 L11.5,0.75 L11.5,0.25Z" fill="#909090"/>
 <path id="nexus_node_200" d="M4,2.5 L0,1 L0,1.5 L1.25,2.5 L4,3 L6.75,2.5 L8,1.5 L8,1Z" fill="#909090"/>
-<path id="nexus_node_239" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
-<path id="nexus_node_240" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
-<path id="nexus_node_241" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_220" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_221" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_222" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
 <path d="M240,44 L252,38 L250,38 L240,43 L230,38 L228,38Z" fill="#707070"/>
 <path d="M240,50 L240,44 L228,38 L224,38 L224,42Z" fill="#484848"/>
 <path d="M254,43 L254,38 L252,38 L240,44 L240,50Z" fill="#282828"/>
@@ -271,7 +257,7 @@
 <path d="M360,43.5 L360,44.5 L364,44.5 L364,43.5Z" fill="#282828"/>
 <path id="nexus_node_203" d="M6,3.5 L0,0.5 L0,1 L1.5,2.75 L6,4 L12,4.5 L18,4 L22.5,2.75 L24,1 L24,0.5 L18,3.5Z" fill="#909090"/>
 <path id="nexus_node_204" d="M8,4.5 L0.5,0.5 L0.5,1 L2.5,3.5 L8,5 L16,5.5 L24,5 L29.5,3.5 L31.5,1 L31.5,0.5 L24,4.5Z" fill="#909090"/>
-<path id="nexus_node_242" d="M3.25,1.75 L2,3 L0.75,1.75 L2,0.5Z" fill="#E8E8E8"/>
+<path id="nexus_node_223" d="M3.25,1.75 L2,3 L0.75,1.75 L2,0.5Z" fill="#E8E8E8"/>
 <path d="M352,135 L352,140 L380,126 L380,121Z" fill="#707070"/>
 <path d="M380,126 L352,140 L352,181 L356,179 L356,146 L358,145.5 L358,178 L365,175 L365,142 L367,141 L367,174 L373,170.5 L373,138 L375,136.5 L375,169.5 L380,167Z" fill="#303030"/>
 <path d="M380,191 L378,192 L378,220 L380,220Z" fill="#303030"/>
@@ -282,7 +268,7 @@
 <path id="nexus_node_73" d="M2.5,8.5 L0,10 L0,1.5 L2.5,0Z" fill="#B8B8B8"/>
 <path id="nexus_node_74" d="M2.5,23 L0,24 L0,1.5 L2.5,0Z" fill="#B8B8B8"/>
 <path d="M354.5,180 L380,167 L380,166.5 L355.5,179 L355.5,176.5 L380,164 L380,160.5 L355.5,173 L355.5,170.5 L380,158 L380,154.5 L355.5,167 L355.5,164.5 L380,152 L380,148.5 L355.5,161 L355.5,158.5 L380,146 L380,142.5 L355.5,155 L355.5,152.5 L380,140 L380,136 L354.5,149Z" fill="#303030"/>
-<path id="nexus_node_243" d="M3,1.5 L2,2.5 L1,1.5 L2,0.5Z" fill="#E8E8E8"/>
+<path id="nexus_node_224" d="M3,1.5 L2,2.5 L1,1.5 L2,0.5Z" fill="#E8E8E8"/>
 <path d="M278,187 L281,189 L281,147 L283,148 L283,190 L288,192 L288,150.5 L290,151 L290,193 L294,195 L294,153.5 L296,154 L296,196 L300,198 L300,150 L278,139Z" fill="#585858"/>
 <path d="M314,143 L300,150 L300,198 L314,205Z" fill="#303030"/>
 <path id="nexus_node_75" d="M0,0.5 L2.5,2 L2.5,28 L0,27Z" fill="#D0D0D0"/>
@@ -333,10 +319,10 @@
 <path d="M459,142.5 L459.75,143 L480,132.75 L480,132Z" fill="#606060"/>
 <path d="M352,201.5 L352,202.5 L380,188.5 L380,187.5Z" fill="#404040"/>
 <path d="M464.5,145.25 L465.5,145.75 L480,138.5 L480,137.5Z" fill="#404040"/>
-<path id="nexus_node_274" d="M5,0.75 L3.75,0.25 L0.75,1.75 L2,2.25Z" fill="#909090"/>
-<path id="nexus_node_275" d="M4.25,1 L3,0.25 L0,1.75 L1.25,2.5Z" fill="#909090"/>
-<path id="nexus_node_276" d="M4.5,1 L3.25,0.5 L0.25,2 L1.5,2.5Z" fill="#D0D0D0"/>
-<path id="nexus_node_277" d="M5,0.75 L3.75,0.25 L0.75,1.75 L2,2.25Z" fill="#D0D0D0"/>
+<path id="nexus_node_255" d="M5,0.75 L3.75,0.25 L0.75,1.75 L2,2.25Z" fill="#909090"/>
+<path id="nexus_node_256" d="M4.25,1 L3,0.25 L0,1.75 L1.25,2.5Z" fill="#909090"/>
+<path id="nexus_node_257" d="M4.5,1 L3.25,0.5 L0.25,2 L1.5,2.5Z" fill="#D0D0D0"/>
+<path id="nexus_node_258" d="M5,0.75 L3.75,0.25 L0.75,1.75 L2,2.25Z" fill="#D0D0D0"/>
 <path d="M338,140 L314,128 L321,124.5 L304,116 L304,138 L308,140 L308,126.5 L311,128 L311,141.5 L314,143 L314,205 L317,207 L317,136 L319,137 L319,208 L323,209.5 L323,138.5 L325,140 L325,210.5 L328,212 L328,141.5 L330,142 L330,213 L334,215 L334,144.5 L336,145 L336,216 L338,217Z" fill="#585858"/>
 <path d="M380,220 L383,220 L383,127 L385,128 L385,220 L390,220 L390,130.5 L392,131 L392,220 L396,220 L396,133.5 L398,134 L398,128 L380,119 L387,115.5 L350,97 L312,116 L324,122 L329,119.5 L337,123.5 L337,125.5 L352,133 L352,135 L380,121Z" fill="#484848"/>
 <path d="M350,100 L318,116 L327,120.5 L329,119.5 L337,123.5 L337,125.5 L351,132.5 L383,116.5Z" fill="none" stroke="#909090" stroke-width="0.5"/>
@@ -350,10 +336,10 @@
 <path d="M304,119 L304,120 L317,126.5 L318,126Z" fill="#808080"/>
 <path id="nexus_node_94" d="M3,17 L0,15.5 L0,0 L3,1.5Z" fill="#D0D0D0"/>
 <path d="M306.5,137.5 L314,141 L314,137 L307.5,134 L307.5,131.5 L314,135 L314,131 L306.5,127.5Z" fill="#585858"/>
-<path id="nexus_node_244" d="M3,2 L2,3 L1,2 L2,1Z" fill="#E8E8E8"/>
-<path id="nexus_node_245" d="M3,1.5 L2,2.5 L1,1.5 L2,0.5Z" fill="#E8E8E8"/>
+<path id="nexus_node_225" d="M3,2 L2,3 L1,2 L2,1Z" fill="#E8E8E8"/>
+<path id="nexus_node_226" d="M3,1.5 L2,2.5 L1,1.5 L2,0.5Z" fill="#E8E8E8"/>
 <path d="M349,220 L356,220 L356,203 L352,205 L352,133 L338,140 L338,217 L341,219 L341,145 L343,143.5 L343,220 L347,220 L347,142 L349,140.5Z" fill="#303030"/>
-<path id="nexus_node_246" d="M3,2 L2,3 L1,2 L2,1Z" fill="#E8E8E8"/>
+<path id="nexus_node_227" d="M3,2 L2,3 L1,2 L2,1Z" fill="#E8E8E8"/>
 <path d="M300,150 L314,143 L300,136 L300,138 L310,143 L300,148 L282,139 L287,136.5 L287,134.5 L278,139Z" fill="#707070"/>
 <path d="M300,148 L310,143 L300,138 L300,139 L294,142 L294,137 L287,133.5 L287,136.5 L282,139Z" fill="#484848"/>
 <path d="M338,138 L348,133 L337,127.5 L337,128.5 L330,132 L330,127 L322,123 L322,126 L318,128Z" fill="#484848"/>
@@ -423,46 +409,40 @@
 <path d="M148,148 L144,150 L144,197 L145,197.5 L148,196Z" fill="#181818"/>
 <path d="M134,140 L134,145 L144,150 L144,145Z" fill="#484848"/>
 <path d="M149,147.5 L144,145 L144,150Z" fill="#282828"/>
-<path id="nexus_node_259" d="M0.5,3 L-2.5,2.5 L-4.5,1.5 L-5.5,0 L-4.5,-1 L-2.5,-2 L0.5,-2.5 L3.5,-2 L5.5,-1 L6.5,0 L5.5,1.5 L3.5,2.5Z" fill="#303030"/>
-<path id="nexus_node_253" d="M5.5,2 L5.5,1.5 L9,1.5 L9.5,2.5 L9,3 L5.5,3 L5.5,2.5 L-4.5,2.5 L-4.5,3 L-8,3 L-8.5,2.5 L-8,1.5 L-4.5,1.5 L-4.5,2Z" fill="#404040"/>
-<path id="nexus_node_254" d="M-7.75,1.75 L-8.25,0.25 L-7.25,-0.75 L-6.75,-2.5 L-5.5,-2.5 L-5,-0.75 L5,-0.75 L8.75,0 L10.25,1 L9.75,1.75 L8,1.75Z" fill="#A8A8A8"/>
-<path id="nexus_node_255" d="M8.5,1.25 L9.75,1.75 L8,1.75 L-7.75,1.75 L-7.5,1Z" fill="#303030"/>
-<path id="nexus_node_256" d="M-3,-0.75 L-1.25,-2.75 L2.5,-3 L4.5,-1.75 L5.5,-0.75Z" fill="#282828"/>
-<path id="nexus_node_257" d="M9.5,1.25 L8.75,0.75 L9.5,0.5 L10.25,0.75Z" fill="#E8E8E8"/>
-<path id="nexus_node_258" d="M-6.75,-3 L-6,-3.75 L-5.5,-3 L-6,-2.25Z" fill="#E8E8E8"/>
-<path id="nexus_node_230" d="M-48,-38 L-48,-5 L-8,15 L-4,16.5 L32,32 L45,38.5 L45,20.5 L49,18.5 L49,11 L32,5 L-8,-16Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_231" d="M35,51 L35,18 L0,0 L0,30Z" fill="#FFFFFF" fill-opacity="0.5"/>
+<path id="nexus_node_240" d="M0.5,3 L-2.5,2.5 L-4.5,1.5 L-5.5,0 L-4.5,-1 L-2.5,-2 L0.5,-2.5 L3.5,-2 L5.5,-1 L6.5,0 L5.5,1.5 L3.5,2.5Z" fill="#303030"/>
+<path id="nexus_node_234" d="M5.5,2 L5.5,1.5 L9,1.5 L9.5,2.5 L9,3 L5.5,3 L5.5,2.5 L-4.5,2.5 L-4.5,3 L-8,3 L-8.5,2.5 L-8,1.5 L-4.5,1.5 L-4.5,2Z" fill="#404040"/>
+<path id="nexus_node_235" d="M-7.75,1.75 L-8.25,0.25 L-7.25,-0.75 L-6.75,-2.5 L-5.5,-2.5 L-5,-0.75 L5,-0.75 L8.75,0 L10.25,1 L9.75,1.75 L8,1.75Z" fill="#A8A8A8"/>
+<path id="nexus_node_236" d="M8.5,1.25 L9.75,1.75 L8,1.75 L-7.75,1.75 L-7.5,1Z" fill="#303030"/>
+<path id="nexus_node_237" d="M-3,-0.75 L-1.25,-2.75 L2.5,-3 L4.5,-1.75 L5.5,-0.75Z" fill="#282828"/>
+<path id="nexus_node_238" d="M9.5,1.25 L8.75,0.75 L9.5,0.5 L10.25,0.75Z" fill="#E8E8E8"/>
+<path id="nexus_node_239" d="M-6.75,-3 L-6,-3.75 L-5.5,-3 L-6,-2.25Z" fill="#E8E8E8"/>
 <path d="M224,190 L216,186 L216,194Z" fill="#404040"/>
-<path d="M214,180 L214,185 L224,190 L224,185Z" fill="#484848"/>
 <path d="M229,187.5 L224,185 L224,190Z" fill="#282828"/>
 <path d="M86,111 L86,116 L229,187.5 L234,185Z" fill="#181818"/>
 <path d="M6,51 L0,48 L0,54Z" fill="#282828"/>
 <path d="M62,91 L62,94 L86,106 L86,111 L234,185 L242,181Z" fill="#404040"/>
-<path d="M0,50.25 L0,50.75 L3.25,52.5 L3.75,52.25Z" fill="none" stroke="#606060" stroke-width="0.5"/>
-<path d="M62,81.25 L62,81.75 L338.5,220 L339.5,220Z" fill="none" stroke="#606060" stroke-width="0.5"/>
-<path d="M62,88.25 L62,88.75 L267.25,191.5 L267.75,191.25Z" fill="none" stroke="#606060" stroke-width="0.5"/>
-<path d="M288,201.25 L288,201.75 L324.5,220 L325.5,220Z" fill="none" stroke="#606060" stroke-width="0.5"/>
-<path d="M62,84.75 L62,85.25 L331.5,220 L332.5,220Z" fill="none" stroke="#181818" stroke-width="0.5"/>
-<path d="M62,91.25 L62,91.75 L241.25,181.5 L241.75,181.25Z" fill="none" stroke="#707070" stroke-width="0.5"/>
+<path d="M0,50 L0,51 L3,52.5 L4,52Z" fill="#606060"/>
+<path d="M62,81 L62,82 L338,220 L340,220Z" fill="#606060"/>
+<path d="M62,88 L62,89 L267,191.5 L268,191Z" fill="#606060"/>
+<path d="M288,201 L288,202 L324,220 L326,220Z" fill="#606060"/>
+<path d="M62,84.5 L62,85.5 L331,220 L333,220Z" fill="#181818"/>
+<path d="M62,91 L62,92 L241,181.5 L242,181Z" fill="#707070"/>
 <path d="M86,109 L86,106 L74,112 L74,172 L84,167 L86,168 L86,111 L234,185 L236,184Z" fill="#282828"/>
 <path d="M234.5,184.75 L235.25,184.5 L172.25,153 L172.25,147.75 L171.75,147.25 L171.75,152.75 L92.25,113 L92.25,107.75 L91.75,107.25 L91.75,112.75 L86,110 L86,110.5Z" fill="#282828"/>
-<path id="nexus_node_260" d="M8,-3.5 L0,0.5 L-46,-22.5 L-38,-26.5Z" fill="#D0D0D0"/>
-<path id="nexus_node_261" d="M0,0.5 L0,13 L-46,-10 L-46,-22.5Z" fill="#808080"/>
-<path id="nexus_node_262" d="M0,13 L8,9 L8,-3.5 L0,0.5Z" fill="#484848"/>
-<path id="nexus_node_263" d="M-3,1.5 L-3,5 L-43,-15 L-43,-18.5Z" fill="#282828"/>
-<path id="nexus_node_264" d="M0,10.5 L0,13 L-46,-10 L-46,-12.5Z" fill="#303030"/>
-<path id="nexus_node_265" d="M-37,-8.75 L-37,-15.75 L-35.5,-15 L-35.5,-8.5 L-23,-2.5 L-23,-8.75 L-21.5,-8 L-21.5,-1.5 L-9,4.5 L-9,-1.75 L-7.5,-1 L-7.5,6Z" fill="#606060"/>
-<path id="nexus_node_266" d="M8,-4 L0,0 L-46,-23 L-38,-27Z" fill="#D0D0D0"/>
-<path id="nexus_node_267" d="M0,0 L0,12.5 L-46,-10.5 L-46,-23Z" fill="#808080"/>
-<path id="nexus_node_268" d="M0,12.5 L8,8.5 L8,-4 L0,0Z" fill="#484848"/>
-<path id="nexus_node_269" d="M-3,1 L-3,4.5 L-43,-15.5 L-43,-19Z" fill="#282828"/>
-<path id="nexus_node_270" d="M0,10 L0,12.5 L-46,-10.5 L-46,-13Z" fill="#303030"/>
-<path id="nexus_node_271" d="M1,6 L1,1 L6,-1.5 L6,3Z" fill="#181818"/>
-<path id="nexus_node_272" d="M3,7 L3,8 L1,9 L1,8Z" fill="#E8E8E8"/>
-<path id="nexus_node_273" d="M-37,-9.25 L-37,-16.25 L-35.5,-15.5 L-35.5,-9 L-23,-3 L-23,-9.25 L-21.5,-8.5 L-21.5,-2 L-9,4 L-9,-2.25 L-7.5,-1.5 L-7.5,5.5Z" fill="#606060"/>
-<path id="nexus_node_232" d="M40,27 L49,27.5 L49,0 L40,0.5 L0,2 L0,32Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_233" d="M16,-16 L-24,-18.5 L-55,-13 L-39,-5.5 L-34,-8 L-17,0.5 L-17,5.5 L3,15.5 L16,15.5 L56,19 L56,-11Z" fill="#FFFFFF" fill-opacity="0.5"/>
-<path id="nexus_node_234" d="M-57,-15 L-26,2.5 L-21,0 L-10,5.5 L-10,10.5 L0,15.5 L23,15.5 L36,17 L36,-2.5 L56.5,-12.5 L23,-17 L-17,-17Z" fill="#FFFFFF" fill-opacity="0.5"/>
+<path id="nexus_node_241" d="M8,-3.5 L0,0.5 L-46,-22.5 L-38,-26.5Z" fill="#D0D0D0"/>
+<path id="nexus_node_242" d="M0,0.5 L0,13 L-46,-10 L-46,-22.5Z" fill="#808080"/>
+<path id="nexus_node_243" d="M0,13 L8,9 L8,-3.5 L0,0.5Z" fill="#484848"/>
+<path id="nexus_node_244" d="M-3,1.5 L-3,5 L-43,-15 L-43,-18.5Z" fill="#282828"/>
+<path id="nexus_node_245" d="M0,10.5 L0,13 L-46,-10 L-46,-12.5Z" fill="#303030"/>
+<path id="nexus_node_246" d="M-37,-8.75 L-37,-15.75 L-35.5,-15 L-35.5,-8.5 L-23,-2.5 L-23,-8.75 L-21.5,-8 L-21.5,-1.5 L-9,4.5 L-9,-1.75 L-7.5,-1 L-7.5,6Z" fill="#606060"/>
+<path id="nexus_node_247" d="M8,-4 L0,0 L-46,-23 L-38,-27Z" fill="#D0D0D0"/>
+<path id="nexus_node_248" d="M0,0 L0,12.5 L-46,-10.5 L-46,-23Z" fill="#808080"/>
+<path id="nexus_node_249" d="M0,12.5 L8,8.5 L8,-4 L0,0Z" fill="#484848"/>
+<path id="nexus_node_250" d="M-3,1 L-3,4.5 L-43,-15.5 L-43,-19Z" fill="#282828"/>
+<path id="nexus_node_251" d="M0,10 L0,12.5 L-46,-10.5 L-46,-13Z" fill="#303030"/>
+<path id="nexus_node_252" d="M1,6 L1,1 L6,-1.5 L6,3Z" fill="#181818"/>
+<path id="nexus_node_253" d="M3,7 L3,8 L1,9 L1,8Z" fill="#E8E8E8"/>
+<path id="nexus_node_254" d="M-37,-9.25 L-37,-16.25 L-35.5,-15.5 L-35.5,-9 L-23,-3 L-23,-9.25 L-21.5,-8.5 L-21.5,-2 L-9,4 L-9,-2.25 L-7.5,-1.5 L-7.5,5.5Z" fill="#606060"/>
 <path d="M10,49 L0,54 L0,56 L10,51 L58,75 L44,82 L0,60 L0,62 L44,84 L62,75Z" fill="#606060"/>
 <path d="M0,166 L16,158 L36,168 L38.5,169 L38.5,98 L71.5,115 L71.5,173 L74,172 L74,112 L36,93 L44,89 L44,84 L0,62Z" fill="#484848"/>
 <path d="M44,84 L44,89 L48,87 L54,90 L54,87 L56,86.5 L56,91 L62,94 L62,75Z" fill="#282828"/>
@@ -479,7 +459,7 @@
 <path d="M9,42.5 L9,44 L13,44 L13,42.5Z" fill="#181818"/>
 <path id="nexus_node_207" d="M6,2 L0.5,0.25 L0.5,0.75 L2,2 L6,2.5 L10,2 L11.5,0.75 L11.5,0.25Z" fill="#909090"/>
 <path id="nexus_node_208" d="M4,1.5 L0,0 L0,0.5 L1,1.5 L4,2 L7,1.5 L8,0.5 L8,0Z" fill="#909090"/>
-<path id="nexus_node_247" d="M3.25,2 L2,3.25 L0.75,2 L2,0.5Z" fill="#E8E8E8"/>
+<path id="nexus_node_228" d="M3.25,2 L2,3.25 L0.75,2 L2,0.5Z" fill="#E8E8E8"/>
 <path d="M61,105.5 L61,103.5 L40,93 L48,89 L61,95.5 L61,93.5 L48,87 L36,93Z" fill="#707070"/>
 <path d="M61,93.5 L61,95.5 L82,106 L74,110 L61,103.5 L61,105.5 L74,112 L86,106Z" fill="#707070"/>
 <path d="M48,89 L40,93 L74,110 L82,106Z" fill="#484848"/>
@@ -487,12 +467,12 @@
 <path id="nexus_node_187" d="M15,43 L-15,27.5 L-15,-42 L15,-26.5Z" fill="#D0D0D0"/>
 <path d="M67,142.5 L66.5,138.5 L65,134 L62,130 L59,127 L55,124.5 L51,123 L48,123 L45,124.5 L43.5,127 L43,130.5Z" fill="#606060"/>
 <path d="M69.5,145 L69.5,144 L40.5,130 L40.5,130.5Z" fill="#606060"/>
-<path id="nexus_node_235" d="M0.25,2.25 L0.25,1 L23.75,12.5 L23.75,14Z" fill="#606060"/>
-<path id="nexus_node_236" d="M21.75,10.75 L21.75,12 L0.25,1.25 L0.25,0Z" fill="#606060"/>
-<path id="nexus_node_237" d="M17.75,9.5 L17.75,10.5 L0.25,1.75 L0.25,0.75Z" fill="#606060"/>
-<path id="nexus_node_238" d="M0.75,1 L0.75,0.25 L11.25,5.5 L11.25,6.5Z" fill="#606060"/>
+<path id="nexus_node_216" d="M0.25,2.25 L0.25,1 L23.75,12.5 L23.75,14Z" fill="#606060"/>
+<path id="nexus_node_217" d="M21.75,10.75 L21.75,12 L0.25,1.25 L0.25,0Z" fill="#606060"/>
+<path id="nexus_node_218" d="M17.75,9.5 L17.75,10.5 L0.25,1.75 L0.25,0.75Z" fill="#606060"/>
+<path id="nexus_node_219" d="M0.75,1 L0.75,0.25 L11.25,5.5 L11.25,6.5Z" fill="#606060"/>
 <path id="nexus_node_192" d="M0,37 L-0.75,36.75 L-0.75,-36.25 L0,-36Z" fill="#A8A8A8"/>
-<path id="nexus_node_248" d="M2,1 L1,2 L0,1 L1,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_229" d="M2,1 L1,2 L0,1 L1,0Z" fill="#E8E8E8"/>
 <path d="M0,168 L0,170 L40,190 L54,183 L54,182 L41,188.5Z" fill="#585858"/>
 <path d="M49,174.5 L49,176.5 L57,180.5 L59,179.5Z" fill="#585858"/>
 <path d="M16,158 L0,166 L0,168 L16,160 L38,171 L40,170Z" fill="#585858"/>
@@ -531,7 +511,7 @@
 <path d="M143.5,164 L143.5,165 L148.5,165 L148.5,164Z" fill="#181818"/>
 <path id="nexus_node_211" d="M6,2.5 L0.5,0.75 L0.5,1.25 L2,2.5 L6,3 L10,2.5 L11.5,1.25 L11.5,0.75Z" fill="#909090"/>
 <path id="nexus_node_212" d="M4,2 L0,0.5 L0,1 L1.25,2 L4,2.5 L6.75,2 L8,1 L8,0.5Z" fill="#909090"/>
-<path id="nexus_node_249" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_230" d="M3.25,1.5 L2,2.75 L0.75,1.5 L2,0Z" fill="#E8E8E8"/>
 <path d="M118,182 L108,187 L120,193 L130,188Z" fill="#707070"/>
 <path d="M108,187 L108,195 L120,201 L120,193Z" fill="#484848"/>
 <path d="M130,196 L130,188 L120,193 L120,201Z" fill="#282828"/>
@@ -598,11 +578,11 @@
 <path d="M455,149 L450.5,150 L448,153 L448,155 L450.5,158 L455,159 L461,159 L465.5,158 L468,155 L468,153 L465.5,150 L461,149Z" fill="#101010"/>
 <path id="nexus_node_2" d="M1.75,-0.28 L8.17,1.95 L3.9,4.08 L-0.38,0.9 L-7.46,2.56 L-9.02,-0.35 L-1.37,-0.61 L-0.71,-4.51 L5.12,-3.73Z" fill="none" stroke="#707070" stroke-width="0.5"/>
 <path d="M457,153 L456,154 L457,155 L459,155 L460,154 L459,153Z" fill="#808080"/>
-<path id="nexus_node_250" d="M2,1 L1,2 L0,1 L1,0Z" fill="#E8E8E8"/>
+<path id="nexus_node_231" d="M2,1 L1,2 L0,1 L1,0Z" fill="#E8E8E8"/>
 <path d="M102.75,179 L101.25,179 L100.5,187 L103.5,187Z" fill="#282828"/>
 <path d="M98,185.5 L98,187.5 L106,187.5 L106,185.5Z" fill="#303030"/>
-<path id="nexus_node_251" d="M-5.5,3.5 L-7,1 L-7.5,-1.5 L-7,-4 L-5.5,-5.5 L-3,-6.5 L0,-6.5 L3,-5.5 L5.5,-3.5 L7,-1 L7.5,1.5 L7,4 L5.5,5.5 L3,6.5 L0,6.5 L-3,5.5Z" fill="#A8A8A8"/>
-<path id="nexus_node_252" d="M4.5,-5.5 L5.5,-5 L0.5,0.5 L-0.5,0Z" fill="#303030"/>
+<path id="nexus_node_232" d="M-5.5,3.5 L-7,1 L-7.5,-1.5 L-7,-4 L-5.5,-5.5 L-3,-6.5 L0,-6.5 L3,-5.5 L5.5,-3.5 L7,-1 L7.5,1.5 L7,4 L5.5,5.5 L3,6.5 L0,6.5 L-3,5.5Z" fill="#A8A8A8"/>
+<path id="nexus_node_233" d="M4.5,-5.5 L5.5,-5 L0.5,0.5 L-0.5,0Z" fill="#303030"/>
 <path id="nexus_node_213" d="M3.75,7.25 L2,6.5 L0.75,5 L0.75,3 L2,1.5 L3.75,0.75 L6.25,0.75 L8,1.5 L9.25,3 L9.25,5 L8,6.5 L6.25,7.25Z" fill="none" stroke="#606060" stroke-width="0.5"/>
 <path id="nexus_node_214" d="M2.5,3.25 L1.5,3.25 L0.5,2.5 L0.5,1.5 L1.5,0.75 L2.5,0.75 L3.5,1.5 L3.5,2.5Z" fill="none" stroke="#606060" stroke-width="0.5"/>
 <circle id="nexus_palette_0" cx="640" cy="0" r="1" fill="#101010" stroke="#101010" stroke-width="0.5"/>
@@ -615,12 +595,12 @@
 <circle id="nexus_palette_7" cx="640" cy="0" r="1" fill="#B8B8B8" stroke="#B8B8B8" stroke-width="0.5"/>
 <circle id="nexus_palette_8" cx="640" cy="0" r="1" fill="#D0D0D0" stroke="#D0D0D0" stroke-width="0.5"/>
 <circle id="nexus_palette_9" cx="640" cy="0" r="1" fill="#E8E8E8" stroke="#E8E8E8" stroke-width="0.5"/>
-<circle id="nexus_palette_10" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.0625" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
-<circle id="nexus_palette_11" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.125" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
-<circle id="nexus_palette_12" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.1875" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
-<circle id="nexus_palette_13" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
-<circle id="nexus_palette_14" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.375" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
-<circle id="nexus_palette_15" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.5" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_10" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.125" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_11" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.25" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_12" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.375" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_13" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.5" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_14" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.625" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
+<circle id="nexus_palette_15" cx="640" cy="0" r="1" fill="#FFFFFF" fill-opacity="0.75" stroke="#FFFFFF" stroke-width="0.5" opacity="0.02"/>
 <text id="nexus_text_16" transform="matrix(1 0 0 1 640 320)" fill="#BDBDBD" font-family="UniversNextPro-Light" font-size="10px">-</text>
 <path d="M0,0 L480,0 L480,38 L0,38 Z" fill="#000000"/>
 <path id="nexus_node_4" transform="matrix(1 0 0 1 0 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#000000" stroke="#000000" stroke-width="0.5"/>

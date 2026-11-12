@@ -127,10 +127,9 @@ on the helipad and the towers round its foot, small ones, with dark towers in
 the haze behind under a black sky. Tops are light, sides mid and dark.
 
 The windows light a few at a time, in a scattered order, never a column at
-once. Fog drifts through the city in four layers at different depths: a glow
-in the sky, haze over the far towers, mist under the monorail and a low layer
-over the road. Each sits over what is behind it and under what is nearer, so
-the far city pales as the fog thickens while the near city stays sharp.
+once. Behind the near city hangs one sheet of fog, over the sky and the far
+towers. As it thickens the far city pales almost to white, while the near city
+stays sharp in front of it.
 
 At rest the city is still. While a note is held, a two-car train runs along
 the monorail, passing behind the nearer towers and coming round again; tiny
@@ -142,7 +141,7 @@ everything eases to a stop where it is.
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
-| bright | Brings in the fog and lights more windows and background lights. At 0 there is no fog: a black sky over darker towers. As it rises, the fog thickens, densest in the haze over the far towers |
+| bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: a black sky over darker towers. As it rises, the fog thickens to nearly white, and more windows and background lights come on |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |

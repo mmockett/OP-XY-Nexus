@@ -3,8 +3,8 @@
 // whole travel, the reshaping outlines (the fans' blades, the advert's lines) at every pose;
 // nothing changing at rest, Shift held or not; the train and the road's cars running their loops
 // and coming and going only where they can't be seen; the fans turning a little every frame while
-// notes are held; bright darkening the sky's gradient (keeping the haze towers lighter) and lighting
-// the windows, which run down every face, in a scattered order; the windows' glow following the amp
+// notes are held; bright bringing in one fog sheet over the sky and the far towers, from none at 0 to its
+// fullest at 100, and lighting the windows, which run down every face, in a scattered order; the windows' glow following the amp
 // envelope through attack, decay, sustain and release, and stopping; sine setting the advert's lines
 // with Shift held or not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
 // those, at a cost by their points), while notes are held and while controls turn; and how much
@@ -27,10 +27,14 @@ namespace city = nexus::city;
 
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
 // bars may change besides), and the opaque filled area, header included, at most 1.55 times the picture
-// below the header (480 x 182 px); the fog at most half of it, and 2.1 times with the fog counted twice.
+// below the header (480 x 182 px); the fog at most 0.15 of it, and 2.0 times with the fog counted four
+// times: the device blends each of its pixels with what is under it, which costs several opaque fills
+// (metro-5's 0.24 of a picture of fog took the device from about 30 to about 20 frames a second).
 const u32 most_points = nexus::screen::budget;
 const double most_fill = 1.55 * 480 * 182;
-const double most_weighted_fill = 2.1 * 480 * 182;     // and with the fog counted twice
+const double fog_weight = 4;
+const double most_fog_fill = 0.15 * 480 * 182;
+const double most_weighted_fill = 2.0 * 480 * 182;     // and with the fog counted fog_weight times
 
 // The track's amp envelope the display is given: unknown unless a check sets it.
 opxy::draw::Envelope amp = {opxy::draw::envelope_unavailable, opxy::draw::envelope_unavailable,
@@ -80,7 +84,7 @@ u32 anything(const Change& c) { return c.nodes + c.texts; }
 
 // The filled area this frame, px^2: the still artwork's and the header's (make_panel.py measures
 // them), and each opaque filled node shown, at its scale (a node partly off screen counted whole); and the
-// fog's, translucent, which the device blends at about twice the cost of an opaque fill.
+// fog's, translucent, which the device blends at several times the cost of an opaque fill.
 double fog_area = 0;
 double filled() {
     double area = nexus::city::static_fill + nexus::city::header_fill;
@@ -149,7 +153,7 @@ Change step(const i32 (&slots)[8], u32 held, u32 serial) {
     const double f = filled();
     if (f > most_filled) most_filled = f;
     if (fog_area > most_fog) most_fog = fog_area;
-    if (f + 2 * fog_area > most_weighted) most_weighted = f + 2 * fog_area;
+    if (f + fog_weight * fog_area > most_weighted) most_weighted = f + fog_weight * fog_area;
     return changed();
 }
 
@@ -486,48 +490,45 @@ int main() {
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
     }
 
-    // Bright brings in the fog: none at 0 (a black sky over darker towers); as bright rises each fog node's
-    // donor, white at its opacity (city.h's fog_alpha, 32nds), never thins; at 100 the haze over the far
-    // towers is the densest, and each nearer layer no denser than the one behind it (the sky's glow, behind
-    // the haze towers, is the faint exception).
+    // Bright brings in the fog: one plain sheet over the sky and the far towers, hidden at 0 (a black sky over
+    // darker towers); as bright rises, painted from its donors (white at their opacity, city.h's fog_alpha,
+    // 32nds), never thinning, through every donor in turn, and at its fullest at 100.
     {
         i32 s[8];
         slots_of(tyrell, s);
-        u32 fogs = 0, last[nexus::Frame::node_count];
-        for (u32 k = city::first; k < city::restyle_end; ++k) {
-            if (city::kind[k] == city::fog) ++fogs;
-            last[k] = 0;
-        }
-        std::printf("the fog: %u nodes in 4 layers\n", static_cast<unsigned>(fogs));
-        expect(fogs >= 8, "no fog");
+        u32 fogs = 0, sheet = 0;
+        for (u32 k = city::first; k < city::restyle_end; ++k)
+            if (city::kind[k] == city::fog) { ++fogs; sheet = k; }
+        std::printf("the fog: %u node, %d points, %.0f px^2 (%.3f of the picture)\n", static_cast<unsigned>(fogs),
+                    outlines[sheet].points, outlines[sheet].area / 16.0, outlines[sheet].area / 16.0 / (480.0 * 182));
+        expect(fogs == 1, "the fog isn't one node");
+        expect(outlines[sheet].filled == 2, "the fog's artwork has no translucent fill");
+        expect(outlines[sheet].area / 16.0 <= most_fog_fill, "the fog sheet is bigger than its budget");
+        u32 last = 0, steps = 0;
         for (int v = 0; v < 128; ++v) {
             s[2] = v == 127 ? 0x7fffffff : v << 24;
             expect(still(s, 1000), "the screen changes at rest while bright is set");
             expect(settled(s), "the fog hasn't settled");
-            u32 layer[4] = {0, 0, 0, 0};
-            for (u32 k = city::first; k < city::restyle_end; ++k) {
-                if (city::kind[k] != city::fog) continue;
-                const opxy::draw::Node& n = frame.nodes[k];
-                if (v == 0) {
-                    expect(hidden(n), "the fog shows at bright 0");
-                    continue;
-                }
-                const bool donor = n.shade >= city::fog_donor && n.shade < city::fog_donor + city::fog_donors;
-                expect(!hidden(n) && donor && n.paint == opxy::draw::fill_and_stroke, "the fog isn't painted from its donors");
-                if (!donor) continue;
-                const u32 alpha = city::fog_alpha[n.shade - city::fog_donor];
-                expect(alpha >= last[k], "the fog thins as bright rises");
-                last[k] = alpha;
-                if (alpha > layer[city::param[k] & 3]) layer[city::param[k] & 3] = alpha;
+            const opxy::draw::Node& n = frame.nodes[sheet];
+            if (v == 0) {
+                expect(hidden(n), "the fog shows at bright 0");
+                continue;
             }
+            const bool donor = n.shade >= city::fog_donor && n.shade < city::fog_donor + city::fog_donors;
+            expect(!hidden(n) && donor && n.paint == opxy::draw::fill_and_stroke, "the fog isn't painted from its donors");
+            if (!donor) continue;
+            const u32 alpha = city::fog_alpha[n.shade - city::fog_donor];
+            expect(alpha >= last, "the fog thins as bright rises");
+            if (alpha > last) ++steps;
+            last = alpha;
             if (v == 32 || v == 64 || v == 96 || v == 127)
-                std::printf("bright %d: the fog's layers at %u, %u, %u and %u 32nds\n", v == 127 ? 100 : (v * 100 + 64) / 127,
-                            static_cast<unsigned>(layer[0]), static_cast<unsigned>(layer[1]), static_cast<unsigned>(layer[2]),
-                            static_cast<unsigned>(layer[3]));
-            if (v) expect(layer[1] >= layer[2] && layer[2] >= layer[3] && layer[1] >= layer[0],
-                          "a nearer fog layer is denser than a farther one");
+                std::printf("bright %d: the fog at %u/32\n", v == 127 ? 100 : (v * 100 + 64) / 127, static_cast<unsigned>(alpha));
         }
-        // Bright jumped from 0 to 100 at rest: the windows, background lights and sky restyle over a few
+        expect(steps == city::fog_donors, "the fog skips a donor as bright rises");
+        expect(last == city::fog_alpha[city::fog_donors - 1], "the fog isn't at its fullest at bright 100");
+        for (u32 d = 1; d < city::fog_donors; ++d)
+            expect(city::fog_alpha[d] > city::fog_alpha[d - 1], "the fog's donors don't rise in opacity");
+        // Bright jumped from 0 to 100 at rest: the windows, background lights and fog restyle over a few
         // frames, each within the budgets, and settle within a second.
         slots_of(tyrell, s);
         s[2] = 0;
@@ -605,7 +606,7 @@ int main() {
             int peak = -1, out = -1;
             i32 last = 0, at_release = 0;
             u32 was = 0;
-            u32 most = 0, most_count = 0, glowing = 0;
+            u32 most = 0, most_count = 0, glowing = 0, most_glow = 0;
             u32 seen[nexus::Frame::node_count];
             for (u32 k = 0; k < nexus::Frame::node_count; ++k) seen[k] = 0;
             for (int f = 0; f < held + 400; ++f) {
@@ -626,7 +627,10 @@ int main() {
                 }
                 last = level;
                 was = state.stage;
-                u32 now = 0;
+                u32 now = 0, recoloured = 0;
+                for (u32 k = city::first; k < city::restyle_end; ++k)
+                    if (std::memcmp(&frame.nodes[k], &before.nodes[k], sizeof frame.nodes[k])) ++recoloured;
+                if (recoloured > most_glow) most_glow = recoloured;
                 for (u32 k = city::first; k < city::restyle_end; ++k) {
                     if (city::kind[k] != city::window) continue;
                     if (frame.nodes[k].shade != city::slot[city::low[k]]) ++now;
@@ -644,10 +648,10 @@ int main() {
             const double expected_level = sustain + (1 - sustain) * std::exp(-(held - peak) * frame_s / tau_d);
             std::printf("%s's envelope: at its peak in %.0f ms (attack %.0f ms); %.2f at the release (%.2f by its "
                         "decay); out in %.0f ms (%.0f ms by its release); %u windows glowed, through %.1f greys each; "
-                        "at most %u points and %u nodes a frame\n", w.name, peak * frame_s * 1000, attack_s * 1000,
+                        "at most %u points and %u nodes a frame, %u of them restyled\n", w.name, peak * frame_s * 1000, attack_s * 1000,
                         at_release / 65536.0, expected_level, out * frame_s * 1000, expected_out * 1000,
                         static_cast<unsigned>(glowing), windows ? greys / double(windows) : 0.0,
-                        static_cast<unsigned>(most), static_cast<unsigned>(most_count));
+                        static_cast<unsigned>(most), static_cast<unsigned>(most_count), static_cast<unsigned>(most_glow));
             expect(peak > 0 && std::fabs(peak * frame_s - attack_s) <= frame_s + 0.05 * attack_s,
                    "the glow doesn't peak at the end of the attack");
             expect(std::fabs(at_release / 65536.0 - expected_level) <= 0.03, "the glow doesn't follow the decay");
@@ -657,6 +661,7 @@ int main() {
             if (attack_s >= 0.2) expect(windows && greys >= 3 * windows, "the glow doesn't step through the greys");
             expect(most <= most_points, "the glow changes more points in a frame than the budget");
             expect(most_count <= nexus::screen::most_nodes + 8, "the glow changes more nodes in a frame than the budget");
+            expect(most_glow <= nexus::screen::most_busy, "the glow restyles more nodes in a frame than most_busy");
             expect(still(s, 1400 + e), "the screen changes after the glow goes out");
         }
         amp.attack = amp.decay = amp.sustain = amp.release = opxy::draw::envelope_unavailable;
@@ -721,10 +726,10 @@ int main() {
     // Released, everything eases to a stop and then nothing changes.
     expect(still(slots, 500), "the screen changes after the train stops");
     std::printf("filled at most %.0f px^2, %.2f of the picture (header included); fog at most %.2f of it, %.2f "
-                "with the fog counted twice (blended)\n", most_filled, most_filled / (480.0 * 182), most_fog / (480.0 * 182),
+                "with the fog counted four times (blended)\n", most_filled, most_filled / (480.0 * 182), most_fog / (480.0 * 182),
                 most_weighted / (480.0 * 182));
     expect(most_filled <= most_fill, "more of the screen is filled than the budget");
-    expect(most_fog <= 0.5 * 480 * 182, "more fog than half the picture");
+    expect(most_fog <= most_fog_fill, "more fog than its budget");
     expect(most_weighted <= most_weighted_fill, "the fill and the blended fog together are over the budget");
     if (!failures) std::puts("ok");
     return failures ? 1 : 0;
