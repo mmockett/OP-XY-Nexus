@@ -43,7 +43,7 @@ using opxy::u32;
 const bool show_fps = false;
 const u32 fps_text = 16;
 
-const u32 budget = 240;                 // points of outlines changed a frame, at most
+const u32 budget = 200;                 // points of outlines changed a frame, at most
 const u32 most_nodes = 30;              // and nodes: many changed at once slow the device too
 const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
 const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round

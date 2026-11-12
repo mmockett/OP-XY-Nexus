@@ -24,10 +24,10 @@ using opxy::draw::unit;
 namespace city = nexus::city;
 
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
-// bars may change besides), and the filled area, header included, at most 1.6 times the picture
+// bars may change besides), and the filled area, header included, at most 1.52 times the picture
 // below the header (480 x 182 px).
 const u32 most_points = nexus::screen::budget;
-const double most_fill = 1.6 * 480 * 182;
+const double most_fill = 1.52 * 480 * 182;
 
 nexus::DisplayState state;
 nexus::Frame frame, before;
@@ -535,12 +535,12 @@ int main() {
         expect(still(s, 1001), "the screen changes at rest");
     }
 
-    // The windows run down every face as far as it is seen (make_panel.py measures it): far more show
-    // than the authored rows alone gave (276), and they cover each column of windows' seen height.
+    // The windows, two floors high, run down every face as far as it is seen (make_panel.py measures
+    // it): they cover each column of windows' seen height.
     std::printf("windows: %u shown, covering %.1f%% of each column's seen height\n",
                 static_cast<unsigned>(city::windows_shown), city::window_cover / 10.0);
     expect(city::window_cover >= 990, "the windows stop short of where their faces are seen");
-    expect(city::windows_shown >= 400, "too few windows show");
+    expect(city::windows_shown >= 190, "too few windows show");
 
     // Sine sets the advert's lines, Shift held or not: longer as it rises, and still at rest.
     for (int held = 0; held < 2; ++held) {

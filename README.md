@@ -122,8 +122,8 @@ A dense isometric city in greys, drawn like pixel art: an elevated monorail
 crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
 tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
 with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
-fans, plant rooms and windows down every face, with pale towers in the haze behind.
-Tops are light, sides mid and dark.
+fans, plant rooms and tall windows, two floors high, down every face, with pale
+towers in the haze behind. Tops are light, sides mid and dark.
 
 At rest the city is still. While a note is held, a two-car train runs along
 the monorail, passing behind the nearer towers and coming round again; tiny
