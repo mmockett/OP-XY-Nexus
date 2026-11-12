@@ -6,7 +6,8 @@
 namespace nexus {
 // Matches resources.display in definition.json: paths, points, nodes, texts, palette.
 // Text slots 0..15 are the two-page header's; 16 is the frame-rate readout.
-using Frame = opxy::draw::Frame<0, 0, city::node_count, 17, 16>;
+// Nodes 0..3 are reshaping outlines (the fans' blades and the advert's lines), of 9 points each.
+using Frame = opxy::draw::Frame<city::paths, city::path_points, city::node_count, 17, 16>;
 
 struct DisplayState {
     opxy::draw::NoteTracker notes;
@@ -19,5 +20,8 @@ struct DisplayState {
     opxy::i32 hold;           // Q10 seconds since the latest note started, while held
     opxy::u32 serial;         // that note's serial: which windows flare
     opxy::u32 frames, acc, worst, fps, worst_shown;   // the frame-rate readout (display.cpp's show_fps)
+    opxy::i32 pace;           // the fans' and the road cars' pace, Q10: 1 while notes are held, easing to 0
+    opxy::u32 spin;           // the fans' turn, Q16
+    opxy::i32 road[city::cars];   // each road car's way along its loop, Q10 px
 };
 }

@@ -119,28 +119,32 @@ ring (Glass Choir).
 ## The screen
 
 A dense isometric city in greys, drawn like pixel art: an elevated monorail
-crossing it on a long diagonal, a second viaduct below, the OP-XY advert tower,
-a sun billboard and a dot-matrix hourglass, a helipad, masts with lights, a
-dish, a ball tower, rooftop fans, plant rooms and rows of windows, with pale
-towers in the haze behind. Tops are light, sides mid and dark.
+crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
+tower, a sun billboard and a dot-matrix hourglass, a helipad with a flying car,
+masts with lights, a dish, a ball tower, rooftop extractor fans, plant rooms and
+rows of windows, with pale towers in the haze behind. Tops are light, sides mid
+and dark.
 
 At rest the city is still. While a note is held, a two-car train runs along
-the monorail, passing behind the nearer towers and coming round again; the
-fans turn, the dish swings, the craft over the helipad bobs and the lights
-blink. When the note ends, everything eases to a stop where it is.
+the monorail, passing behind the nearer towers and coming round again; tiny
+cars drive both ways along the road below, the fans turn smoothly, the dish
+swings, the flying car bobs and the lights blink. When the note ends,
+everything eases to a stop where it is.
 
 | Control | What it changes |
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves drift apart |
-| bright | How many windows and background lights are lit |
+| bright | The sky darkens from a light grey to near black, and more windows and background lights are lit |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
-| ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two |
+| ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |
 | swell | Dark windows flare one by one while a note is held, and the advert's pattern pulses |
-| bite | How high the craft hovers over the helipad: at 0 it has landed |
+| bite | How high the flying car hovers over the helipad: at 0 it has landed |
+| sine (Shift) | The two lines under the advert's pattern, short to long |
 
-While Shift is held, the header's bright row shows the Shift controls.
+While Shift is held, the header's bright row shows the Shift controls. Sine's
+lines follow it whether or not Shift is held.
 
 ## CPU
 

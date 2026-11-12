@@ -1,10 +1,12 @@
 // Nexus's screen checks, compiled for the host and run by python sdk.py test --machine <folder>:
 // every frame valid and every outline within the device's drawing rules across every control's
-// whole travel; nothing changing at rest, Shift held or not; the train running its loop and
-// coming and going only where it can't be seen; how much changes a frame, in nodes and in the
-// points of their outlines (the device redraws those, at a cost by their points), while notes
-// are held and while controls turn; and how much of the screen is filled, which the device
-// pays for every frame.
+// whole travel, the reshaping outlines (the fans' blades, the advert's lines) at every pose;
+// nothing changing at rest, Shift held or not; the train and the road's cars running their loops
+// and coming and going only where they can't be seen; the fans turning a little every frame while
+// notes are held; bright darkening the sky; sine setting the advert's lines with Shift held or
+// not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
+// those, at a cost by their points), while notes are held and while controls turn; and how much
+// of the screen is filled, which the device pays for every frame.
 #include "../display.cpp"
 #include "outlines.h"
 #include <cstdio>
@@ -18,6 +20,7 @@ namespace {
 using opxy::i32;
 using opxy::u32;
 using opxy::draw::unit;
+namespace city = nexus::city;
 
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
 // bars may change besides), and the filled area, header included, at most 1.6 times the picture
@@ -51,11 +54,13 @@ bool hidden(const opxy::draw::Node& node) {
 struct Change { u32 nodes, points, texts; };
 Change changed() {
     Change c = {0, 0, 0};
-    for (u32 k = 0; k < nexus::Frame::node_count; ++k)
-        if (std::memcmp(&frame.nodes[k], &before.nodes[k], sizeof frame.nodes[k])) {
+    for (u32 k = 0; k < nexus::Frame::node_count; ++k) {
+        const bool reshaped = k < city::paths && frame.paths[k].key != before.paths[k].key;
+        if (reshaped || std::memcmp(&frame.nodes[k], &before.nodes[k], sizeof frame.nodes[k])) {
             ++c.nodes;
             c.points += static_cast<u32>(outlines[k].points);
         }
+    }
     for (u32 k = 0; k < nexus::screen::fps_text; ++k)
         if (std::memcmp(&frame.texts[k], &before.texts[k], sizeof frame.texts[k])) ++c.texts;
     if (std::memcmp(frame.header, before.header, sizeof frame.header)) ++c.texts;
@@ -67,7 +72,7 @@ u32 anything(const Change& c) { return c.nodes + c.texts; }
 // them), and each filled node shown, at its scale (a node partly off screen counted whole).
 double filled() {
     double area = nexus::city::static_fill + nexus::city::header_fill;
-    for (u32 k = 8; k < nexus::Frame::node_count; ++k) {
+    for (u32 k = city::first; k < nexus::Frame::node_count; ++k) {
         const opxy::draw::Node& node = frame.nodes[k];
         if (hidden(node) || !outlines[k].filled) continue;
         const double s = node.scale / 1024.0;
@@ -83,8 +88,34 @@ void expect(bool ok, const char* what) {
 
 // The device's drawing rules, for every node on screen at its scale in this frame
 // (OP-XY-MNMD docs/SCREEN.md; the SDK's docs/display.md, "Drawing on the device").
+// A reshaping outline as the frame has it, against the same rules: points 1/8 px apart, a closing edge
+// of 1/4 px, no turn within 2.5 degrees of straight back, some area, within 64 px of its node.
+void check_path(u32 p) {
+    const opxy::draw::Point* q = frame.paths[p].points;
+    const u32 n = city::path_points;
+    double area = 0;
+    for (u32 j = 0; j < n; ++j) {
+        const opxy::draw::Point &a = q[(j + n - 1) % n], &b = q[j], &c = q[(j + 1) % n];
+        const double ux = a.x - b.x, uy = a.y - b.y, vx = c.x - b.x, vy = c.y - b.y;
+        const double gap2 = vx * vx + vy * vy, back2 = ux * ux + uy * uy;
+        expect(gap2 >= (unit / 8.0) * (unit / 8.0), "a reshaping outline's points closer than 1/8 px");
+        // the turn at b: within 2.5 degrees of straight back when the two edges nearly coincide
+        const double dot = ux * vx + uy * vy, cross = ux * vy - uy * vx;
+        expect(!(dot > 0 && cross * cross < 0.0019 * dot * dot), "a reshaping outline turns straight back");
+        expect(b.x >= -64 * unit && b.x <= 64 * unit && b.y >= -64 * unit && b.y <= 64 * unit,
+               "a reshaping outline's point past 64 px from its node");
+        area += static_cast<double>(b.x) * c.y - static_cast<double>(c.x) * b.y;
+        (void)back2;
+    }
+    const double cx = q[0].x - q[n - 1].x, cy = q[0].y - q[n - 1].y;
+    expect(cx * cx + cy * cy >= (unit / 4.0) * (unit / 4.0), "a reshaping outline's closing edge under 1/4 px");
+    expect(area != 0, "a reshaping outline with no area");
+    expect(frame.paths[p].key != 0, "a reshaping outline without a key");
+}
+
 void check_outlines() {
-    for (u32 k = 0; k < nexus::Frame::node_count; ++k) {
+    for (u32 p = 0; p < city::paths; ++p) check_path(p);
+    for (u32 k = city::paths; k < nexus::Frame::node_count; ++k) {
         const opxy::draw::Node& node = frame.nodes[k];
         if (hidden(node)) continue;
         const Outline& o = outlines[k];
@@ -132,6 +163,46 @@ void check_train() {
     }
 }
 
+// The road's cars: between two frames each either moved a little along the road (at most a pixel
+// across, half that up or down, the way it drives), or came or went at the ends of its run, where
+// make_panel.py found it wholly hidden.
+u32 cars_appeared = 0;
+void check_cars() {
+    for (u32 k = city::restyle_end; k < nexus::Frame::node_count; ++k) {
+        if (city::kind[k] != city::car) continue;
+        const u32 p = city::param[k];
+        const opxy::draw::Node &a = before.nodes[k], &b = frame.nodes[k];
+        const i32 home_x = city::home_x[k] * unit;
+        if (!hidden(a) && !hidden(b)) {
+            const i32 dx = b.x - a.x, dy = b.y - a.y;
+            expect(dx * city::car_way[p] >= 0 && (dx < 0 ? -dx : dx) <= unit && dy >= -(dx >> 1) - 2 &&
+                       dy <= -(dx >> 1) + 2, "a road car jumped");
+        } else if (hidden(a) && !hidden(b)) {
+            const i32 at = b.x - home_x;
+            expect(city::car_way[p] > 0 ? at <= (city::car_start[p] + 2) * unit : at >= (city::car_end[p] - 2) * unit,
+                   "a road car appeared on screen");
+            ++cars_appeared;
+        } else if (!hidden(a) && hidden(b)) {
+            const i32 at = a.x - home_x;
+            expect(city::car_way[p] > 0 ? at >= (city::car_end[p] - 2) * unit : at <= (city::car_start[p] + 2) * unit,
+                   "a road car vanished on screen");
+        }
+    }
+}
+
+// The fans: while notes are held and the pace is up, every frame turns each fan's blades a little,
+// smoothly (at most 12 degrees a frame); released, they ease to a stop.
+u32 fan_turns = 0, fan_frames = 0;
+void check_fans() {
+    for (u32 f = 0; f < city::fans; ++f) {
+        const u32 a = (before.paths[f].key - 1) & 0xffffu, b = (frame.paths[f].key - 1) & 0xffffu;
+        const u32 step = (b - a) & 0xffffu;
+        expect(step <= 2185u, "a fan's blades jumped");
+        if (step) ++fan_turns;
+    }
+    ++fan_frames;
+}
+
 // At rest, once settled, every node that restyles shows what the controls ask of it.
 bool settled(const i32 (&slots)[8]) {
     nexus::screen::Controls c;
@@ -139,7 +210,8 @@ bool settled(const i32 (&slots)[8]) {
     c.bright = nexus::screen::q16(slots[2]); c.reso = nexus::screen::q16(slots[3]);
     c.chorus = nexus::screen::q16(slots[4]); c.ring = nexus::screen::q16(slots[5]);
     c.swell = nexus::screen::q16(slots[6]); c.bite = nexus::screen::q16(slots[7]);
-    for (u32 k = 8; k < nexus::city::restyle_end; ++k)
+    c.sine = nexus::screen::q16(row.values[0]);
+    for (u32 k = city::first; k < nexus::city::restyle_end; ++k)
         if (!nexus::screen::same(frame.nodes[k], nexus::screen::restyled(k, state, c, false))) return false;
     return true;
 }
@@ -167,6 +239,7 @@ int main() {
     expect(opxy::draw::valid(frame), "the first frame is invalid");
     check_outlines();
     expect(state.fresh == 0, "the first frame didn't set every node");
+    for (u32 p = 0; p < city::paths; ++p) expect(frame.paths[p].key != 0, "the first frame didn't set every outline");
     expect(settled(slots), "the first frame doesn't show the controls");
     std::printf("%u nodes; filled at rest at Tyrell: %.0f px^2, %.2f of the picture (header included)\n",
                 static_cast<unsigned>(nexus::Frame::node_count), filled(), filled() / (480.0 * 182));
@@ -292,13 +365,16 @@ int main() {
     // While notes are held: the train runs and comes round, the fans turn, the dish swings, the
     // craft bobs, the lights blink and windows flare. Measured at the default, at every control
     // up, at every control down, and at the most flaring (bright 0, swell 100), notes changing.
-    const double settings[4][8] = {
+    const double settings[6][8] = {
         {0, .22, .46, .28, .45, 0, .80, 0},
         {1, 1, 1, 1, 1, 1, 1, 1},
         {0, 0, 0, 0, 0, 0, 0, 0},
         {0, .22, 0, .28, .45, 1, 1, 0},
+        {0, .22, 1, .28, 1, 1, .8, .6},      // night, the craft up and bobbing, every ring
+        {.5, .5, .5, .5, .5, .5, .5, .5},
     };
-    for (int k = 0; k < 4; ++k) {
+    u32 flight_points = 0, flight_nodes = 0;
+    for (int k = 0; k < 6; ++k) {
         i32 s[8];
         slots_of(settings[k], s);
         for (int f = 0; f < 150; ++f) step(s, 0, 20 + k);
@@ -309,6 +385,8 @@ int main() {
             const u32 serial = 30 + k * 100 + f / 60;
             const Change c = step(s, f % 60 < 48 ? 2u : 0u, serial);
             check_train();
+            check_cars();
+            check_fans();
             check_outlines();
             points += c.points;
             nodes += c.nodes;
@@ -322,24 +400,33 @@ int main() {
         expect(most <= most_points, "a frame in flight changes more points than the budget");
         expect(most_nodes <= nexus::screen::most_nodes + 8, "a frame in flight changes more nodes than the budget");
         expect(train_appeared >= 1, "the train doesn't come round again");
+        if (most > flight_points) flight_points = most;
+        if (most_nodes > flight_nodes) flight_nodes = most_nodes;
     }
+    std::printf("in flight: at most %u points and %u nodes changed a frame (the header's bars included)\n",
+                static_cast<unsigned>(flight_points), static_cast<unsigned>(flight_nodes));
 
     // Turning controls while the train runs: every frame within the budget, and once released the
     // city settles to the controls and nothing changes.
     {
         i32 s[8];
         slots_of(tyrell, s);
-        u32 most = 0;
-        for (int f = 0; f < 600; ++f) {
-            const int k = (f / 75) & 7;                         // each control in turn, swept up and down
+        u32 most = 0, most_turning_nodes = 0;
+        for (int f = 0; f < 675; ++f) {
+            const int k = (f / 75) % 9;                         // each control in turn, and sine, swept up and down
             const int v = f % 75 < 38 ? (f % 75) * 56 : (74 - f % 75) * 56;
-            s[k] = v > 2047 ? 0x7fffffff : v << 20;
+            if (k < 8) s[k] = v > 2047 ? 0x7fffffff : v << 20;
+            else row.values[0] = v > 2047 ? 0x7fffffff : v << 20;
             const Change c = step(s, 2, 900 + f / 50);
             check_train();
+            check_cars();
             check_outlines();
             if (c.points > most) most = c.points;
+            if (c.nodes > most_turning_nodes) most_turning_nodes = c.nodes;
         }
-        std::printf("turning controls while the train runs: at most %u points changed a frame\n", static_cast<unsigned>(most));
+        row.values[0] = defaults[0];
+        std::printf("turning controls and sine while the train runs: at most %u points and %u nodes changed a frame\n",
+                    static_cast<unsigned>(most), static_cast<unsigned>(most_turning_nodes));
         expect(most <= most_points, "turning a control while the train runs changes more points than the budget");
         expect(still(s, 950), "the screen changes after the train stops");
         expect(settled(s), "the city hasn't settled after turning controls while the train ran");
@@ -351,13 +438,22 @@ int main() {
         for (int j = 0; j < 8; ++j) s[j] = slots[j];
         s[4] = fast ? 0x7fffffff : 0;
         train_appeared = 0;
+        cars_appeared = 0;
+        fan_turns = fan_frames = 0;
         for (int f = 0; f < 6000; ++f) {
             step(s, 1, 990);
             check_train();
+            check_cars();
+            check_fans();
         }
-        std::printf("held for %d s at chorus %d: the train came round %u times\n", 6000 * 33 / 1000, fast ? 100 : 0,
-                    static_cast<unsigned>(train_appeared));
+        std::printf("held for %d s at chorus %d: the train came round %u times, the road's cars %u times; "
+                    "the fans turned in %u of %u fan-frames\n", 6000 * 33 / 1000, fast ? 100 : 0,
+                    static_cast<unsigned>(train_appeared), static_cast<unsigned>(cars_appeared),
+                    static_cast<unsigned>(fan_turns), static_cast<unsigned>(fan_frames * city::fans));
         expect(train_appeared >= (fast ? 10u : 2u), "the train doesn't keep coming round");
+        expect(cars_appeared >= 4 * city::cars, "the road's cars don't keep coming back");
+        // eased up within a second, the fans turn every frame after: smooth, not stepped
+        expect(fan_turns + 31 * city::fans >= fan_frames * city::fans, "the fans don't turn every frame while held");
     }
 
     // Reduced motion: the train still runs, without easing; frames valid.
@@ -368,6 +464,65 @@ int main() {
         nexus::display(state, in, frame);
         expect(opxy::draw::valid(frame), "a reduced-motion frame is invalid");
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
+    }
+
+    // Bright darkens the sky and the clouds, from a light grey at 0 to near black at 100, never
+    // brightening as it rises; at every setting the lit windows stand out from the sky.
+    {
+        i32 s[8];
+        slots_of(tyrell, s);
+        u32 sky = 0, cloud = 0;
+        for (u32 k = city::first; k < city::restyle_end; ++k)
+            if (city::kind[k] == city::sky) (city::low[k] == 12 ? sky : cloud) = k;
+        expect(sky && cloud, "no sky or no clouds");
+        u32 last = 99;
+        for (int v = 0; v < 128; ++v) {
+            s[2] = v == 127 ? 0x7fffffff : v << 24;
+            expect(still(s, 1000), "the screen changes at rest while bright is set");
+            expect(settled(s), "the sky hasn't settled");
+            const u32 shade = frame.nodes[sky].shade;
+            expect(shade <= last, "the sky brightens as bright rises");
+            expect(frame.nodes[cloud].shade >= shade && frame.nodes[cloud].shade <= shade + 2, "the clouds part from the sky");
+            expect(shade + 2 <= 14, "the lit windows don't stand out from the sky");
+            for (u32 k = city::first; k < city::restyle_end; ++k)
+                if (city::kind[k] == city::sky && city::low[k] == 12) expect(frame.nodes[k].shade == shade, "the sky in two greys");
+            last = shade;
+            if (v == 0) expect(shade == 12, "the sky at bright 0 isn't light grey");
+            if (v == 127) expect(shade <= 1, "the sky at bright 100 isn't near black");
+        }
+        std::printf("bright 0 to 100: the sky from grey 12 to grey %u\n", static_cast<unsigned>(last));
+        slots_of(tyrell, s);
+        expect(still(s, 1001), "the screen changes at rest");
+    }
+
+    // Sine sets the advert's lines, Shift held or not: longer as it rises, and still at rest.
+    for (int held = 0; held < 2; ++held) {
+        row.held = static_cast<u32>(held);
+        i32 last = 0;
+        for (int v = 0; v <= 100; ++v) {
+            row.values[0] = v == 100 ? 0x7fffffff : v * 21474836 + (v * 47 + 50) / 100;
+            expect(still(slots, 1100), "the screen changes at rest while sine is set");
+            const i32 end = frame.paths[city::lines].points[1].x;
+            expect(v == 0 || end > last, "the advert's lines don't lengthen with sine");
+            expect(((frame.paths[city::lines].key - 1) & 0xffffu) == static_cast<u32>(v), "the lines aren't at sine's step");
+            last = end;
+        }
+        std::printf("sine 0 to 100%s: the advert's first line ends %.1f px further right\n", held ? " (Shift held)" : "",
+                    (last - (frame.paths[city::lines].points[0].x + city::line_length[0][0])) / 1024.0);
+    }
+    row.held = 0;
+    row.values[0] = defaults[0];
+
+    // The fans: held, they ease up and then turn every frame; released, they ease to a stop.
+    {
+        fan_turns = fan_frames = 0;
+        for (int f = 0; f < 31; ++f) step(slots, 1, 1200);
+        for (int f = 0; f < 300; ++f) {
+            step(slots, 1, 1200);
+            check_fans();
+        }
+        expect(fan_turns == fan_frames * city::fans, "the fans miss a frame while held");
+        expect(still(slots, 1200), "the fans don't stop once released");
     }
 
     // Released, everything eases to a stop and then nothing changes.

@@ -2,28 +2,33 @@
 
 // Nexus's screen: a dense isometric city in greys, after a pixel-art picture: an elevated
 // monorail with a two-car train, the OP-XY advert tower, a sun billboard and a dot-matrix
-// hourglass, a helipad with a craft over it, masts, a dish, a ball tower and rooftop fans.
-// At rest it is still. While notes are held the train runs along its track, passing behind
-// the nearer towers and coming round again; the fans turn, the dish swings, the craft bobs
-// and the lights blink. Released, it all eases to a stop where it is.
+// hourglass, a helipad with a flying car over it, masts, a dish, a ball tower, rooftop fans
+// and a road with tiny cars. At rest it is still. While notes are held the train runs along
+// its track, passing behind the nearer towers and coming round again; the cars drive both ways
+// along the road, the fans turn, the dish swings, the flying car bobs and the lights blink.
+// Released, it all eases to a stop where it is.
 //
 // What the controls do to it:
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves drift apart
-//   bright  how many windows and background lights are lit
+//   bright  the sky darkens from a light grey to near black, and more windows and background lights are lit
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
-//   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two
+//   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes
+//           behind its mast or the ball and in front of it
 //   swell   dark windows flare one after another while a note is held, and the pattern pulses
-//   bite    how high the craft hovers over the helipad: at 0 it has landed
+//   bite    how high the flying car hovers over the helipad: at 0 it has landed
+//   sine    (the Shift row's) the two lines under the advert's pattern, short to long; the row's values
+//           reach the display whether or not Shift is held
 //
-// The Shift row shows in the header while Shift is held; the city doesn't draw it.
+// The Shift row shows in the header while Shift is held.
 //
 // The city's towers, track and roofs are still artwork, each face clipped to what is seen of
 // it, so the screen is filled about once (tools/make_panel.py). What changes is a node, and the
 // device pays for every point of a node that changes, so a frame changes at most `budget`
 // points: what moves goes first, then the rest restyles within what's left, resuming where it
-// left off. Nothing changes at rest.
+// left off. The fans' blades and the advert's lines are reshaping outlines (nodes 0..3), redrawn
+// whole when they change. Nothing changes at rest.
 namespace nexus {
 namespace screen {
 using namespace opxy::draw;
@@ -35,12 +40,14 @@ const bool show_fps = false;
 const u32 fps_text = 16;
 
 const u32 budget = 240;                 // points of outlines changed a frame, at most
-const u32 most_nodes = 34;              // and nodes: many changed at once slow the device too
+const u32 most_nodes = 30;              // and nodes: many changed at once slow the device too
 const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
 const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round
 const i32 rise = 30;                    // how high the craft hovers at bite 100, px (make_panel.py's CRAFT_RISE)
 const i32 drift = 5;                    // how far each half of the hourglass moves at detune 100, px (SAND_DRIFT)
 const i32 course = city::train_end - city::train_start + gap;   // the train's loop, px
+const i32 road_gap = 30;                // px of its run a road car spends out of sight before it comes back
+const u32 fan_rate = 32768;             // the fans' turn while notes are held, Q16 turns a second: half a turn
 
 static inline u32 hash(i32 i, i32 j, u32 k) {
     u32 h = static_cast<u32>(i) * 374761393u + static_cast<u32>(j) * 668265263u + k * 1442695041u;
@@ -58,7 +65,17 @@ static inline i32 sway(u32 turn) {
     return (x * (32768 - a)) >> 18;                                         // 4 x (1 - |x|), Q10
 }
 
-struct Controls { u32 shape, detune, bright, reso, chorus, ring, swell, bite; };
+struct Controls { u32 shape, detune, bright, reso, chorus, ring, swell, bite, sine; };
+
+// sin(2 pi x) for a Q16 turn, Q14, from city.h's quarter wave.
+static inline i32 sine_of(u32 turn) {
+    const u32 t = turn & 0xffffu, f = t & 0x3fffu;
+    const u32 at = (t & 0x4000u) ? 0x4000u - f : f;                        // 0..16384 along the quarter
+    const u32 i = at >> 8, frac = at & 255u;
+    const i32 a = city::quarter_sine[i], b = city::quarter_sine[i < 64 ? i + 1 : 64];
+    const i32 v = a + (((b - a) * static_cast<i32>(frac)) >> 8);
+    return (t & 0x8000u) ? -v : v;
+}
 
 // ------------------------------------------------------------------ nodes and what they cost
 static inline Node pose(i32 x, i32 y, i32 scale, u32 shade, Paint paint) {
@@ -73,6 +90,8 @@ static inline Node pose(i32 x, i32 y, i32 scale, u32 shade, Paint paint) {
     return n;
 }
 static inline Node parked() { return pose(hidden_x * unit, hidden_y * unit, unit, 0, keep); }
+// A grey from low toward high (either way) by a Q16 amount.
+static inline u32 toward(u32 low, u32 high, u32 amount);
 static inline Node home(u32 k, u32 shade, Paint paint) {
     return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, shade, paint);
 }
@@ -86,6 +105,12 @@ static inline u32 between(u32 low, u32 high, u32 amount) {
     const u32 v = low + ((amount * (high - low + 1)) >> 16);
     return v > high ? high : v;
 }
+static inline u32 toward(u32 low, u32 high, u32 amount) {
+    return high >= low ? between(low, high, amount) : low - between(0, low - high, amount);
+}
+// How dark bright makes the sky: its square, so it stays light at the lower settings and darkens most
+// toward 100, where the lit windows are most.
+static inline u32 night(u32 bright) { return (bright * bright) >> 16; }
 // The advert's pattern for a shape: 1 ramps (the saw, to 30), 2 a checker (saw and pulse into the square,
 // to 85), 3 bars (the narrowing pulse). Pattern 0, circles, is drawn but not shown: shape has no sine now.
 static inline u32 pattern_of(u32 shape) { return shape < 19661u ? 1 : shape < 55706u ? 2 : 3; }
@@ -132,6 +157,7 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
         const u32 level = ring_level(c.ring, p);
         return level ? home(k, low + (level - 1) * (high - low) / 2, stroke) : parked();
     }
+    case city::sky: return home(k, toward(low, high, night(c.bright)), fill_and_stroke);
     default: return home(k, 0, keep);
     }
 }
@@ -142,10 +168,6 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
     switch (city::kind[k]) {
     case city::light:   // on for about a quarter of every second, each at its own phase
         return home(k, ((clock + p * 4u) & 1023u) < 230u ? city::high[k] : city::low[k], fill_and_stroke);
-    case city::fan: {   // three poses of its blades, eight a second
-        const u32 pose_now = ((clock * 8u + (p / 3u) * 341u) >> 10) % 3u;
-        return pose_now == p % 3u ? home(k, 0, keep) : parked();
-    }
     case city::dish: {  // swings up to 8 degrees either way, a whole degree at a time
         Node n = home(k, 0, keep);
         const Turn t = rotation(((sway(clock * 5u) * 8) >> 10) * 10);
@@ -171,6 +193,12 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
         const i32 d = city::train_start * unit + s.run;
         return pose(city::home_x[k] * unit + d, city::home_y[k] * unit + (d >> 1), unit, 0, keep);
     }
+    case city::car: {   // along the road, up it to the right or down it to the left, then out of sight a while
+        const i32 run = s.road[p], length = (city::car_end[p] - city::car_start[p]) * unit;
+        if (run > length) return parked();
+        const i32 d = city::car_way[p] > 0 ? city::car_start[p] * unit + run : city::car_end[p] * unit - run;
+        return pose(city::home_x[k] * unit + d, city::home_y[k] * unit - (d >> 1), unit, 0, keep);
+    }
     default: return home(k, 0, keep);
     }
 }
@@ -179,7 +207,7 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
 // nodes; resumes next frame at the first that didn't fit.
 static inline void restyle(DisplayState& s, Frame& frame, const Controls& c, bool held, u32 left, u32 count_left,
                            u32& spent) {
-    const u32 first = 8, count = city::restyle_end - first;
+    const u32 first = city::first, count = city::restyle_end - first;
     u32 k = s.cursor < first || s.cursor >= city::restyle_end ? first : s.cursor;
     for (u32 n = 0; n < count; ++n, k = k + 1 == city::restyle_end ? first : k + 1) {
         const Node want = restyled(k, s, c, held);
@@ -192,6 +220,65 @@ static inline void restyle(DisplayState& s, Frame& frame, const Controls& c, boo
         spent += cost;
     }
     s.cursor = k;
+}
+
+// The reshaping outlines. Each fan's three blades in its roof's plane, turned by `turn` (Q16): a
+// blade's root near the hub and its two tips, (u, v) in the roof to (u - v, (u + v) / 2) on screen.
+static inline void blades(Frame& frame, u32 f, u32 turn) {
+    const u32 k = f;
+    const i32 reach = city::fan_reach[f];
+    u32 at = 0;
+    for (u32 b = 0; b < 3; ++b) {
+        const u32 a0 = turn + b * 21845u;
+        const u32 angle[3] = {a0 - static_cast<u32>(city::fan_root), a0 - static_cast<u32>(city::fan_tip),
+                              a0 + static_cast<u32>(city::fan_tip)};
+        for (u32 j = 0; j < 3; ++j) {
+            const i32 r = j ? reach : city::fan_hub;
+            const i32 u = (r * sine_of(angle[j] + 16384u)) >> 14, v = (r * sine_of(angle[j])) >> 14;
+            frame.paths[k].points[at].x = city::fan_x[f] + u - v;
+            frame.paths[k].points[at].y = city::fan_y[f] + ((u + v) >> 1);
+            ++at;
+        }
+    }
+    frame.paths[k].key = (k << 16 | (turn & 0xffffu)) + 1u;
+}
+// The advert's two lines, a bracket: as long as sine's step (0..100) asks, in its face's units
+// (u, w) to (u, u / 2 + w) on screen.
+static inline void lines(Frame& frame, u32 step) {
+    const u32 k = city::lines;
+    const i32 l1 = city::line_length[0][0] + (city::line_length[0][1] - city::line_length[0][0]) * static_cast<i32>(step) / 100;
+    const i32 l2 = city::line_length[1][0] + (city::line_length[1][1] - city::line_length[1][0]) * static_cast<i32>(step) / 100;
+    const i32 g = city::line_gap, h = city::line_height, sp = city::line_spine;
+    const i32 u[9] = {0, l1, l1, sp, sp, l2, l2, 0, 0};
+    const i32 w[9] = {0, 0, h, h, g, g, g + h, g + h, (g + h) >> 1};
+    for (u32 j = 0; j < 9; ++j) {
+        frame.paths[k].points[j].x = city::line_x + u[j];
+        frame.paths[k].points[j].y = city::line_y + (u[j] >> 1) + w[j];
+    }
+    frame.paths[k].key = (k << 16 | step) + 1u;
+}
+// Brings the reshaping outlines to the fans' turn and sine's step; returns the points redrawn and
+// counts the outlines changed.
+static inline u32 reshape(DisplayState& s, Frame& frame, const Controls& c, u32& count) {
+    u32 spent = 0;
+    for (u32 f = 0; f < city::fans; ++f) {
+        const u32 turn = (s.spin + f * 9000u) & 0xffffu;   // each fan at its own angle
+        const Node want = home(f, 9, stroke);
+        if (!s.fresh && frame.paths[f].key == (f << 16 | turn) + 1u && same(frame.nodes[f], want)) continue;
+        blades(frame, f, turn);
+        frame.nodes[f] = want;
+        spent += city::path_points;
+        ++count;
+    }
+    const u32 step = (c.sine * 100u + 32768u) >> 16;
+    const Node want = home(city::lines, between(city::low[city::lines], city::high[city::lines], c.reso), stroke);
+    if (s.fresh || frame.paths[city::lines].key != ((city::lines << 16) | step) + 1u || !same(frame.nodes[city::lines], want)) {
+        lines(frame, step);
+        frame.nodes[city::lines] = want;
+        spent += city::path_points;
+        ++count;
+    }
+    return spent;
 }
 
 // The frame-rate readout, as BENCH counts it: frames until a second of elapsed time, and the
@@ -317,13 +404,16 @@ inline void display_reset(DisplayState& state) {
     state.notes.reset();
     state.header.reset();
     state.fresh = 1;
-    state.cursor = 8;
+    state.cursor = city::first;
     state.run = -city::train_start * opxy::draw::unit;   // the train at home
     state.speed = 0;
     state.clock = 0;
     state.hold = 0;
     state.serial = 0;
     state.frames = state.acc = state.worst = state.fps = state.worst_shown = 0;
+    state.pace = 0;
+    state.spin = 0;
+    for (opxy::u32 k = 0; k < city::cars; ++k) state.road[k] = city::car_phase[k] * opxy::draw::unit;
 }
 
 inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& frame) {
@@ -335,6 +425,9 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     c.shape = q16(input.slots[0]); c.detune = q16(input.slots[1]); c.bright = q16(input.slots[2]);
     c.reso = q16(input.slots[3]); c.chorus = q16(input.slots[4]); c.ring = q16(input.slots[5]);
     c.swell = q16(input.slots[6]); c.bite = q16(input.slots[7]);
+    // The Shift row's values reach the display whether or not Shift is held (opxy/synth_shift.hpp).
+    const ShiftRow& row = shift_row(input);
+    c.sine = q16(row.values[0]);
 
     // Swell: each note re-chooses the windows that flare, and they light one by one.
     if (!held) state.hold = 0;
@@ -354,7 +447,19 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     state.run += (state.speed * dt) >> 10;
     if (state.run >= course * unit) state.run -= course * unit;
 
-    // What moves first; then the rest restyles within what's left.
+    // The fans and the road's cars: on one pace that eases to 1 while notes are held, and to 0.
+    const i32 aim = held ? unit : 0;
+    if (input.reduced_motion) state.pace = aim;
+    else state.pace += (((aim - state.pace) >> 3) * (dt * 6 < 1024 ? dt * 6 : 1024)) >> 8;
+    if (!held && state.pace < unit / 16) state.pace = 0;
+    state.spin = (state.spin + ((fan_rate * static_cast<u32>(state.pace) * static_cast<u32>(dt)) >> 20)) & 0xffffu;
+    for (u32 k = 0; k < city::cars; ++k) {
+        state.road[k] += (city::car_speed[k] * state.pace * dt) >> 10;
+        const i32 loop = (city::car_end[k] - city::car_start[k] + road_gap) * unit;
+        if (state.road[k] >= loop) state.road[k] -= loop;
+    }
+
+    // What moves first, and the reshaping outlines; then the rest restyles within what's left.
     u32 spent = 0, count = 0;
     for (u32 k = city::restyle_end; k < city::node_count; ++k) {
         const Node want = moved(k, state, c, held);
@@ -363,6 +468,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         spent += city::points[k];
         ++count;
     }
+    spent += reshape(state, frame, c, count);
     restyle(state, frame, c, held, spent < budget ? budget - spent : 0, count < most_nodes ? most_nodes - count : 0, spent);
     state.fresh = 0;
     readout(state, input, frame);
@@ -370,10 +476,9 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     // The titles are definition.json's labels (city.h, from make_panel.py).
     char values[8][header_capacity];
     captions(values, c, input.slots);
-    const ShiftRow& row = shift_row(input);
     char shift_values[8][header_capacity];
     shift_captions(shift_values, row.values);
-    page_header(state.header, input, frame, city::titles, values, 0, page_header_slots, row, city::shift_titles,
+    page_header(state.header, input, frame, city::titles, values, city::bars, page_header_slots, row, city::shift_titles,
                 shift_values);
 }
 }
