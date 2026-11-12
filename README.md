@@ -123,13 +123,14 @@ crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
 tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
 with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
 fans, plant rooms and windows down every face, tall ones two floors high and,
-on the helipad and the towers round its foot, small ones. Behind them, under a
-black sky, a far skyline of dark towers, some stepped to a spire, fills the
-gaps between the near ones. Tops are light, sides mid and dark.
+on the helipad and the towers round its foot, small ones. Looking down on it
+there is no sky: behind the near city, far towers, some stepped to a spire and
+some rising out of the picture, fill every gap, over the dark streets of the
+city below. Tops are light, sides mid and dark.
 
 The windows light a few at a time, in a scattered order, never a column at
-once. Behind the near city hangs one sheet of fog, over the sky and the far
-towers. As it thickens the far city pales almost to white, while the near city
+once. Behind the near city hangs one sheet of fog, over the far towers and
+streets. As it thickens the far city pales almost to white, while the near city
 stays sharp in front of it.
 
 At rest the city is still. While a note is held, a two-car train runs along
@@ -142,7 +143,7 @@ everything eases to a stop where it is.
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
-| bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: a black sky over darker towers. As it rises, the fog thickens to nearly white, and more windows and background lights come on |
+| bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: the far city is dark. As it rises, the fog thickens to nearly white, and more windows and background lights come on |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |

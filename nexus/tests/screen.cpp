@@ -3,7 +3,7 @@
 // whole travel, the reshaping outlines (the fans' blades, the advert's lines) at every pose;
 // nothing changing at rest, Shift held or not; the train and the road's cars running their loops
 // and coming and going only where they can't be seen; the fans turning a little every frame while
-// notes are held; bright bringing in one fog sheet over the sky and the far towers, from none at 0 to its
+// notes are held; bright bringing in one fog sheet over the far city, from none at 0 to its
 // fullest at 100, and lighting the windows, which run down every face, in a scattered order; the windows' glow following the amp
 // envelope through attack, decay, sustain and release, and stopping; sine setting the advert's lines
 // with Shift held or not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
@@ -28,7 +28,8 @@ namespace city = nexus::city;
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
 // bars may change besides), and the opaque filled area, header included, at most 1.52 times the picture
 // below the header (480 x 182 px: metro-6 held 30 frames a second at full bright with 1.51, and the far
-// skyline added since is paid for by the clouds taken out); the fog at most 0.15 of it, and 2.0 times
+// city filling every gap since is paid for by the clouds taken out and by thin bands that now hide the
+// faces under them); the fog at most 0.15 of it, and 2.0 times
 // with the fog counted four times: the device blends each of its pixels with what is under it, which costs
 // several opaque fills (metro-5's 0.24 of a picture of fog took the device from about 30 to about 20 frames
 // a second). The still artwork's fill counts its circles whole: the device fills all of each.
@@ -492,8 +493,8 @@ int main() {
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
     }
 
-    // Bright brings in the fog: one plain sheet over the sky and the far towers, hidden at 0 (a black sky over
-    // darker towers); as bright rises, painted from its donors (white at their opacity, city.h's fog_alpha,
+    // Bright brings in the fog: one plain sheet over the far city, hidden at 0 (the far city dark); as bright
+    // rises, painted from its donors (white at their opacity, city.h's fog_alpha,
     // 32nds), never thinning, through every donor in turn, and at its fullest at 100.
     {
         i32 s[8];

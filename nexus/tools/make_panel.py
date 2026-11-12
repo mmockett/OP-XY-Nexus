@@ -21,7 +21,7 @@ Pure Python with shapely 2.2.0 (a prebuilt wheel); nothing is compiled.
 The city is still, so it is drawn once: every face is a filled outline, and
 each is clipped to what is actually seen of it, back to front, so the screen
 is filled about once over. What changes is a node: the fog (one sheet of
-translucent white over the sky and the far towers, re-shaded from the palette's
+translucent white over the far city, re-shaded from the palette's
 white donors), lit
 windows (short segments of each column, lit in a scattered order), background lights, the advert's text and pattern, the billboards, the
 hourglass's dots, neon edges, rings (a back half and a front half each, round
@@ -93,7 +93,7 @@ def grey(t):
 NEAR = (9, 6, 3)
 MID = (9, 7, 4)
 FAR = (10, 8, 5)
-HAZE = (5, 4, 3)                  # the far towers: dark, as the sky is black; the fog over them lightens them
+HAZE = (5, 4, 3)                  # the far towers: dark; the fog over them lightens them
 # The palette: ten of the greys for the nodes (display.cpp rounds any grey to the nearest of them, the
 # darker of two), then six donors of white fog at rising opacity, on the screen's 1/32 alpha steps.
 PALETTE_TONES = [1, 2, 4, 6, 8, 10, 12, 13, 14, 15]
@@ -101,9 +101,9 @@ FOG_ALPHA = [4, 8, 12, 16, 20, 24]                     # 32nds: even, so at most
 FOG_DONOR = len(PALETTE_TONES)                         # the first fog donor's palette slot
 assert FOG_DONOR + len(FOG_ALPHA) == 16
 # The fog: one plain sheet of translucent white, the picture's width, from the header down past the last of
-# the far city seen, drawn after the sky and the far towers and before everything nearer, so the far city
+# the far city seen, drawn after the far city and before everything nearer, so the far city
 # pales as the fog thickens and the near city stays crisp. Bright sets its opacity; at 0 it is hidden, a
-# black sky over darker towers. Only what is seen of it is drawn (compose() cuts it), as one outline.
+# dark far city. Only what is seen of it is drawn (compose() cuts it), as one outline.
 FOG_POINTS = 40                   # the sheet's outline, at most
 # Round things drawn as SVG circles: the OP-XY's SVG loader knows circle and ellipse (with cx, cy, r, rx
 # and ry), and still circles with a plain fill or stroke have drawn on it (Orbit's dots, Bend's and Recur's
@@ -340,11 +340,13 @@ def quad(f, u, w, du, dw):
 
 
 def column(f, u, w, du, dw, n, pitch, spine=0.5):
-    """n dashes stacked down a face, joined by a thin spine at their left: one outline."""
+    """n dashes stacked down a face, joined by a thin spine at their left: one outline. du is each one's
+    length, or a list of them."""
     pts = []
     for k in range(n):
         wk = w + k * pitch
-        pts += [f(u if k == 0 else u + spine, wk), f(u + du, wk), f(u + du, wk + dw)]
+        d = du[k] if isinstance(du, list) else du
+        pts += [f(u if k == 0 else u + spine, wk), f(u + d, wk), f(u + d, wk + dw)]
         pts.append(f(u + spine, wk + dw) if k < n - 1 else f(u, wk + dw))
     return pts
 
@@ -428,11 +430,13 @@ GLYPH_WIDTH = {"O": 6, "P": 6, "-": 4, "X": 6, "Y": 6}
 
 # ------------------------------------------------------------------ the city
 def comb_down(f, u, w, du, dw, n, pitch, spine=0.6):
-    """n bars side by side, hanging from a thin spine along their tops: one outline."""
+    """n bars side by side, hanging from a thin spine along their tops: one outline. dw is each one's
+    length, or a list of them."""
     pts = []
     for k in range(n):
         uk = u + k * pitch
-        pts += [f(uk, w if k == 0 else w + spine), f(uk, w + dw), f(uk + du, w + dw)]
+        d = dw[k] if isinstance(dw, list) else dw
+        pts += [f(uk, w if k == 0 else w + spine), f(uk, w + d), f(uk + du, w + d)]
         pts.append(f(uk + du, w + spine) if k < n - 1 else f(uk + du, w))
     return pts
 
@@ -600,7 +604,7 @@ def city():
     C = City()
     g = C.grid
 
-    # --- the sky: black (the screen's own background), and the haze far behind
+    # --- far behind: the haze (and under it all the floor, floor(), where nothing else is)
     glows = []
     haze = [  # (fx, fy, a, b, spire)
         (16, 76, 18, 12, 0), (52, 56, 12, 10, 0), (126, 56, 12, 10, 1), (152, 70, 14, 10, 0), (260, 46, 18, 16, 0),
@@ -639,6 +643,11 @@ def city():
             inset = 2 + 2 * step
             h.faces_of(Box(bx.x0 + inset, bx.x1 - inset, bx.y0 + inset, bx.y1 - inset,
                            bx.z1 + 6 * step, bx.z1 + 6 * step + 6), HAZE)
+    # and farthest, rising past the top of the picture (their roofs out of sight), behind the rest
+    farthest = [(346, 36, 10, 6), (386, 36, 12, 10), (410, 34, 10, 8), (104, 34, 8, 8)]   # (fx, fy, a, b)
+    for k, (fx, fy, a, b) in enumerate(farthest):
+        bx = tower(fx, fy, a, b, -1700 + k * 16)
+        solid(f"haze{len(haze) + len(farther) + k}", bx).faces(HAZE, sides=(False, True, True))
 
     # --- behind the track
     # B: the tall dark tower left of centre, with a plant room on its roof and lit strips
@@ -674,7 +683,7 @@ def city():
     C.box_on("adv1", tw, 30, 24, 9, 10, 4)
     t.fill(quad(tw.L, 2.5, 4, 42, 84), 5, occ=True)                     # the advert's screen
     for k in range(3):
-        t.fill(quad(tw.R, 0, 8 + k * 7, 43, 3), 4)
+        t.fill(quad(tw.R, 0, 8 + k * 7, 43, 3), 4, occ=True)      # (it hides the face under it: less fill)
         t.fill(quad(tw.R, 0, 11 + k * 7, 43, 1), 7)
     g(t, tw.R, 8, 34, 5, 3, 7, 12, 3, 13, 500)
     u = 6.5
@@ -723,7 +732,7 @@ def city():
     for rx, ry, slot in hoops:
         C.ring(ball, bcx, bcy, rx, ry, 6, 3, slot, True)
     ball.fill([(sx_ - 3, sy_ + 1), (sx_ - 2, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 1)], 4)
-    ball.fill([(sx_ + 0.6, sy_ + 0.5), (sx_ + 0.6, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 0.5)], 2)
+    ball.fill([(sx_ + 0.6, sy_ + 0.5), (sx_ + 0.6, sy_ - 34), (sx_ + 2, sy_ - 34), (sx_ + 3, sy_ + 0.5)], 2, occ=True)
     for k in range(4):
         ball.fill([(sx_ - 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 5 - 7 * k),
                    (sx_ - 2.6, sy_ - 5 - 7 * k)], 6)
@@ -768,9 +777,19 @@ def city():
     s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=SAND, keep=True,
            sweep=[(0, 0), (0, SAND_DRIFT)])
     # the dot matrix: the panel's grey laid over the gaps between dots, rows and columns
-    s.node(column(hg.L, 5.5, 10.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
-    s.node(column(hg.L, 5.5, 46.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
-    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, 75, 9, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
+    # (each bar only as long as the sand can reach under it, as detune drifts it: over the bare panel the
+    # bars would be the panel's grey on the panel's grey, fill for nothing)
+    def reach(w0, top):
+        """How far right the sand can be in the row from w0 (face units): the top half's right edge at the
+        row's top (it drifts up), the bottom half's at the row's foot (it drifts down)."""
+        if top:
+            return 32 - 11.5 * (max(17, w0) - 17) / 28
+        return 20.5 + 11.5 * (min(75, w0 + 1.25) - 47) / 28
+    for w0, top in ((10.75, True), (46.75, False)):
+        lengths = [min(28, reach(w0 + 3 * k, top) + 0.75 - 5.5) for k in range(12)]
+        s.node(column(hg.L, 5.5, w0, lengths, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
+    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, [2] + [75] * 8, 9, 3, spine=0.6), kind="panel", low=12, high=15,
+           tone=14)                       # (the first bar, left of where the sand ever reaches, a stub)
     g(s, hg.R, 4, 8, 2, 4, 7, 12, 2, 13, 700)
     s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
     # far right: a tall tower with a grid of windows
@@ -821,9 +840,9 @@ def city():
     # the rails and the deck's lip: thin filled ribbons, about 0.9 px. (Stroked, each long edge was drawn
     # twice, once either side of the stroke, and the device pays for every row an edge crosses.)
     for v, t_ in ((2.0, 8), (9.0, 8), (5.5, 2)):
-        s.fill([P(-160, v, 70), P(300, v, 70), P(300, v + 1, 70), P(-160, v + 1, 70)], t_, occ=False)
-    s.fill([P(-160, 12, 70), P(300, 12, 70), P(300, 12, 69), P(-160, 12, 69)], 9, occ=False)
-    s.fill([P(-160, 12, 64), P(300, 12, 64), P(300, 12, 62), P(-160, 12, 62)], 3)
+        s.fill([P(-160, v, 70), P(300, v, 70), P(300, v + 1, 70), P(-160, v + 1, 70)], t_, occ=True)
+    s.fill([P(-160, 12, 70), P(300, 12, 70), P(300, 12, 69), P(-160, 12, 69)], 9, occ=True)
+    s.fill([P(-160, 12, 64), P(300, 12, 64), P(300, 12, 62), P(-160, 12, 62)], 3, occ=True)
     # the deck's side in segments: a joint midway between each two piers, joined along the dark foot
     s.fill(row(deck.L, 119.7, 1.5, 0.6, 6, 4, 80, spine=0.6), 3, occ=False)
     for k, x in enumerate((-80, 0, 80, 160, 240)):
@@ -886,7 +905,7 @@ def city():
     s = solid("fans", lb)
     s.faces((7, 5, 2))
     s.fill([lb.T(2, 2), lb.T(43, 2), lb.T(43, 18), lb.T(2, 18)], 5)
-    s.fill(quad(lb.L, 0, 6, 45, 6.5), 3)
+    s.fill(quad(lb.L, 0, 6, 45, 6.5), 3, occ=True)
     C.band(s, lb.L, 2, 7, 9, 3.4, 4.5, 4.8, 3, 14, 940)
     C.fan(s, lb, 14, 10, 6.5)
     C.box_on("L0", lb, 30, 6, 9, 8, 6, lid=5)
@@ -915,7 +934,7 @@ def city():
     rf = tower(462, 196, 54, 30, -12)
     s = solid("Rf", rf)
     s.faces((8, 5, 2))
-    s.fill(quad(rf.L, 0, 0, rf.a, 2), 9)
+    s.fill(quad(rf.L, 0, 0, rf.a, 2), 9, occ=True)
     for k in range(5):                 # rows of wide windows, the lowest running off the screen's foot
         C.band(s, rf.L, 4, 8 + 8 * k, 5, 7.5, 4, 9.5, 5, 14, 980 + 10 * k, per=3)
     s2, ru = C.box_on("Rfu", rf, 6, 4, 44, 24, 26, shades=(10, 8, 4))
@@ -1074,7 +1093,7 @@ def fog():
 def fog_sheet(far, cover):
     """What is seen of the fog, as one outline: the picture's width from the header down to just past the
     last of the far city (far) seen, less what hides it (cover). Its outline runs a little under what hides
-    it, so it shows no edge of its own anywhere: the sky and the far towers are fogged right up to the near
+    it, so it shows no edge of its own anywhere: the far city is fogged right up to the near
     city. Where what is seen of it falls apart, thin bridges under the near towers join it into one outline,
     and holes (near parts it surrounds) are filled; both are hidden, but drawn (and blended), so the outline
     is then eased down to FOG_POINTS points by dropping, one at a time, the point that adds the least to it
@@ -1259,13 +1278,105 @@ def compose():
                 cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
             continue
         ps = pieces(vis)
+        if slice_of(s.name) == 0:         # the far city's crumbs: the floor behind shows there instead
+            ps = [p for p in ps if abs(area(p)) >= FAR_CRUMB]
         dropped += max(0.0, vis.area - sum(abs(area(p)) for p in ps))
         for p in reversed(ps):
             out.append(dict(kind=it.kind, pts=p, tone=it.tone, width=it.width, name=s.name))
         if it.occ:
             cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
     out.reverse()
-    return solids, merge(out), dropped
+    out = merge(out)
+    return solids, floor(out) + out, dropped
+
+
+# The city's floor: we look down on it, so there is no sky. Whatever the towers leave uncovered is the far
+# city's floor, its streets and low roofs, one grey darker than the far towers' darkest side, drawn first and
+# under the fog: as few outlines as will cover it (joined under the header's foot, where the near city hides
+# the join), each eased to fewer points where that adds little hidden fill.
+FLOOR = 2                         # its grey
+FAR_CRUMB = 30                    # px^2: a far tower's piece smaller than this is left to the floor
+FLOOR_EASE = 1.5                  # px^2 of hidden fill a dropped point may add, at most
+FLOOR_SPLITS = 2                  # the outlines the floor's strip is cut into
+SHOWN = ("window", "glow", "glyph", "panel", "neon", "light")   # nodes always shown where they rest
+
+
+def floor(out):
+    """The floor's outlines: the stage less everything drawn over it at rest, as outlines that cover that
+    a little past its edges (hidden under what is drawn after them)."""
+    if not SEEN:                      # the first pass, which only finds where the windows show
+        return []
+    drawn = []
+    for e in out:
+        if e["kind"] == "fill":
+            drawn.append(Polygon(e["pts"]))
+        elif e["kind"] == "round":
+            drawn.append(Polygon(e["pts"]).buffer(0.1))
+        elif e["kind"] == "line":
+            drawn.append(Polygon(e["pts"]).exterior.buffer(e["width"] / 2))
+        elif e["item"].node["kind"] in SHOWN:     # (painted, a node grows a quarter pixel a side)
+            drawn.append(screen_poly(e["item"].pts).buffer(0.3, join_style="mitre"))
+    bare = surface(STAGE.difference(shapely.union_all(drawn, grid_size=GRID), grid_size=GRID))
+    # (what is under a pixel wide between two outlines is the edges' own: the device's smoothing covers it)
+    bare = bare.buffer(-0.5, join_style="mitre").buffer(0.5, join_style="mitre").intersection(bare)
+    bare = [g for g in getattr(bare, "geoms", [bare]) if g.area >= 1]
+    if not bare:
+        return []
+    need = shapely.union_all([g.buffer(0.3, join_style="mitre") for g in bare]).intersection(rect(0, TOP - 0.25, 480, BOTTOM))
+    # joined along a thin strip under the header's foot: the parts that reach it become one outline
+    strip = rect(0, TOP - 0.25, 480, TOP + 0.05)
+    body = shapely.union_all([need, strip])
+    # in FLOOR_SPLITS outlines across the picture, so each can follow what it covers closely
+    cuts = [480 * k / FLOOR_SPLITS for k in range(FLOOR_SPLITS + 1)]
+    parts = [body.intersection(rect(a, 0, b, 480)) for a, b in zip(cuts, cuts[1:])]
+    out = []
+    for g in [q for part in parts for q in getattr(part, "geoms", [part]) if q.area >= 0.5]:
+        pts = [tuple(v) for v in list(Polygon(g.exterior).exterior.coords)[:-1]]
+        if area(pts) < 0:
+            pts.reverse()
+        pts = ease(pts, need.intersection(g))
+        out.append(dict(kind="fill", pts=pts, tone=FLOOR, width=0.0, name="floor"))
+    return out
+
+
+def ease(pts, need):
+    """Drops points, one at a time, the one adding the least area first, while that adds at most FLOOR_EASE px^2,
+    never uncovers need and never crosses the outline; then as many more as keep it to 60."""
+    def cost(k):
+        a_, b_, c_ = pts[k - 1], pts[k], pts[(k + 1) % len(pts)]
+        d = -cross(sub(b_, a_), sub(c_, b_)) / 2
+        if d < 0 and Polygon([a_, b_, c_]).buffer(0).intersection(need).area > 0.01:
+            return None
+        return d
+
+    def crosses(k):
+        a_, c_ = pts[k - 1], pts[(k + 1) % len(pts)]
+        for j in range(len(pts)):
+            p_, q_ = pts[j], pts[(j + 1) % len(pts)]
+            if p_ in (a_, c_) or q_ in (a_, c_) or pts[k] in (p_, q_):
+                continue
+            if segments_cross(a_, c_, p_, q_):
+                return True
+        return False
+    known = [cost(k) for k in range(len(pts))]
+    while len(pts) > 3:
+        best = None
+        for c, k in sorted((c, k) for k, c in enumerate(known) if c is not None):
+            if c > FLOOR_EASE and len(pts) <= 60:
+                break
+            if not crosses(k):
+                best = k
+                break
+        if best is None:
+            break
+        del pts[best]
+        del known[best]
+        for j in (best - 1, best):
+            known[j % len(pts)] = cost(j % len(pts))
+    out = tidy(pts, GRID)
+    assert out is not None and len(out) <= 60, "the floor doesn't fit its outlines"
+    assert Polygon(out).buffer(0.05).contains(need.buffer(-0.35)), "the floor misses some of the bare stage"
+    return out
 
 
 def reach(e):

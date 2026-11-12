@@ -12,8 +12,8 @@
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves of dark dots drift apart
 //   bright  more windows and background lights are lit, in a scattered order, and a fog comes in: one plain
-//           sheet of translucent white over the sky and the far towers, under everything nearer, thicker as
-//           bright rises; at 0 there is none, a black sky over darker towers
+//           sheet of translucent white over the far city, under everything nearer, thicker as bright
+//           rises; at 0 there is none, and the far city is dark
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
 //   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes
