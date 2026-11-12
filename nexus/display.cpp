@@ -8,7 +8,7 @@
 // and the lights blink. Released, it all eases to a stop where it is.
 //
 // What the controls do to it:
-//   shape   the advert's pattern: circles for sine, ramps for saw, a checker for square, bars for pulse
+//   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves drift apart
 //   bright  how many windows and background lights are lit
 //   reso    the advert, the billboards and the neon edges brighten
@@ -86,8 +86,9 @@ static inline u32 between(u32 low, u32 high, u32 amount) {
     const u32 v = low + ((amount * (high - low + 1)) >> 16);
     return v > high ? high : v;
 }
-// The advert's pattern for a shape: 0 circles (sine), 1 ramps (saw), 2 a checker (square), 3 bars (pulse).
-static inline u32 pattern_of(u32 shape) { return shape < 7864u ? 0 : shape < 19661u ? 1 : shape < 45875u ? 2 : 3; }
+// The advert's pattern for a shape: 1 ramps (the saw, to 30), 2 a checker (saw and pulse into the square,
+// to 85), 3 bars (the narrowing pulse). Pattern 0, circles, is drawn but not shown: shape has no sine now.
+static inline u32 pattern_of(u32 shape) { return shape < 19661u ? 1 : shape < 55706u ? 2 : 3; }
 // A ring's level, 0 (none) or 1..3 faint to bright: the first ring comes in, then the second.
 static inline u32 ring_level(u32 g, u32 slot) {
     if (slot == 0) return g == 0 ? 0 : 1 + smallest(2u, (g * 6) >> 16);

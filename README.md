@@ -131,7 +131,7 @@ blink. When the note ends, everything eases to a stop where it is.
 
 | Control | What it changes |
 | --- | --- |
-| shape | The advert's pattern: circles for sine, ramps for saw, a checker for square, thin bars for pulse |
+| shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves drift apart |
 | bright | How many windows and background lights are lit |
 | reso | The advert, the billboards and the neon edges brighten |

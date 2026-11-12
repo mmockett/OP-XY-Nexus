@@ -1157,7 +1157,7 @@ def between(lo, hi, amount):
 
 
 def pattern_of(shape):
-    return 0 if shape < 7864 else 1 if shape < 19661 else 2 if shape < 45875 else 3
+    return 1 if shape < 19661 else 2 if shape < 55706 else 3
 
 
 def ring_level(g, slot):
