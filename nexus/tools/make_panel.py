@@ -811,7 +811,7 @@ def city():
     t.node([tw.L(46.3, 3), tw.L(47, 3), tw.L(47, 98), tw.L(46.3, 98)], kind="neon", low=5, high=15, tone=12)
     for k, (uu, vv, hh) in enumerate([(8, 6, 44), (36, 4, 50), (40, 30, 36)]):
         C.mast(t, *tw.T(uu, vv), hh, rings=k != 1, phase=k * 80)
-    C.duct(t, tw, 33, 15, 4.5)
+    C.duct(t, tw, 34, 12.5, 4.5)
 
     # small blocks right of the advert tower
     s, bx = C.building("F", 302, 100, 22, 26, -110, FAR)
