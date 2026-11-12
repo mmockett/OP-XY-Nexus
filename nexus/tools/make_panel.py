@@ -63,6 +63,13 @@ HAZE = (12, 11, 10)
 SKY = 12
 
 
+def hash32(i, j, k):
+    """display.cpp's hash: the same integers on both sides."""
+    h = (i * 374761393 + j * 668265263 + k * 1442695041) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    return h ^ (h >> 16)
+
+
 def P(x, y, z):
     """The isometric camera, 2:1: world x runs down-right, y down-left, z up."""
     return (OX + x - y, OY + (x + y) / 2 - z)
@@ -284,7 +291,7 @@ def strokes(lines, width):
 GLYPHS = {   # 6 wide, 9 tall, strokes 1.6 wide (face units)
     "O": [[(0.8, 0.8), (5.2, 0.8), (5.2, 8.2), (0.8, 8.2), (0.8, 0.8)]],
     "P": [[(0.8, 9), (0.8, 0.8), (5.2, 0.8), (5.2, 4.6), (0.8, 4.6)]],
-    "-": [[(0, 5), (4, 5)]],
+    "-": [[(0, 4.3), (4, 4.3)]],
     "X": [[(0.8, 0.8), (5.2, 8.2)], [(5.2, 0.8), (0.8, 8.2)]],
     "Y": [[(0.8, 0.8), (3, 4.6)], [(5.2, 0.8), (3, 4.6)], [(3, 4.6), (3, 8.2)]],
 }
@@ -314,8 +321,8 @@ class City:
     def grid(self, s, f, u0, w0, cols, rows, du, dw, pu, pw, face, lit, seed):
         for c in range(cols):
             u = u0 + c * pu
-            strip = quad(f, u + 0.25, w0 + 0.25, du - 0.5, (rows - 1) * pw + dw - 0.5)
-            s.node(strip, kind="window", low=max(face - 1, 1), high=lit, param=(seed * 61 + c * 29 + 7) % 256, tone=lit)
+            strip = quad(f, u, w0, du - 0.5, (rows - 1) * pw + dw - 0.5)
+            s.node(strip, kind="window", low=max(face - 1, 1), high=lit, param=hash32(seed, c, 5) & 255, tone=lit)
         if rows > 1:
             width = (cols - 1) * pu + du
             s.fill(column(f, u0 - 1.4, w0 + dw, width + 1.9, pw - dw, rows - 1, pw, spine=0.7), face, occ=False)
@@ -326,8 +333,8 @@ class City:
         while k < n:
             m = min(per, n - k)
             u = u0 + k * pu
-            s.node(quad(f, u + 0.25, w0 + 0.25, (m - 1) * pu + du - 0.5, dw - 0.5), kind="window",
-                   low=max(face - 1, 1), high=lit, param=(seed * 61 + k * 29 + 7) % 256, tone=lit)
+            s.node(quad(f, u, w0, (m - 1) * pu + du - 0.5, dw - 0.5), kind="window",
+                   low=max(face - 1, 1), high=lit, param=hash32(seed, k, 5) & 255, tone=lit)
             k += m
         s.fill(comb_down(f, u0 + du, w0 - 1.4, pu - du, dw + 1.9, n - 1, pu, spine=0.7), face, occ=False)
 
@@ -356,12 +363,12 @@ class City:
                     (x + width + 0.8, y - h * 0.4 + 1.2), (x - width - 0.8, y - h * 0.4 + 1.2)], tone)
         self.lights.append((owner, x, y - h - 0.6, 1.3, phase))
         if rings:
-            self.rings.append((owner, ellipse(x, y - h * 0.62, 5.5, 1.8, 12, 0.5), 0))
-            self.rings.append((owner, ellipse(x, y - h * 0.82, 4.0, 1.4, 12, 0.5), 1))
+            self.rings.append((owner, ellipse(x, y - h * 0.62, 5.5, 1.8, 10, 0.5), 0))
+            self.rings.append((owner, ellipse(x, y - h * 0.82, 4.0, 1.4, 10, 0.5), 1))
 
     def fan(self, owner, bx, cu, cv, r):
-        owner.fill(disc(bx.T, cu, cv, r + 1.4, 16), 9)
-        owner.fill(disc(bx.T, cu, cv, r + 0.4, 16), 1)
+        owner.fill(disc(bx.T, cu, cv, r + 1.4, 12), 9)
+        owner.fill(disc(bx.T, cu, cv, r + 0.4, 12), 1)
         k = len(self.fans)
         for f in range(3):
             pts = []
@@ -404,14 +411,16 @@ def city():
                 h.faces_of(sb, HAZE)
             mx, my = bx.T(a / 2, b / 2)
             h.fill([(mx - 1.2, my - 11), (mx - 0.3, my - 26), (mx + 0.3, my - 26), (mx + 1.2, my - 11)], 11)
-        for r in range(3):
-            h.fill(quad(bx.L, 2, 7 + r * 8, a - 4, 1.4), 12)
+        h.fill(quad(bx.L, 2, 7, a - 4, 1.5), 12)
+        for r in range(2):
+            h.node(quad(bx.L, 2, 15 + r * 8, a - 4.5, 1), kind="glow", low=11, high=14,
+                   param=hash32(k, r, 9) & 255, tone=14)
         if k % 2:
             glows.append((h, quad(bx.L, 3 + (k * 5) % max(1, int(a) - 6), 11 + (k % 3) * 8, 1.6, 1.6), k))
         else:
             glows.append((h, quad(bx.R, 2 + (k * 3) % max(1, int(b) - 5), 9 + ((k + 1) % 3) * 9, 1.6, 1.6), k + 40))
     for h, pts, seed in glows:
-        h.node(pts, kind="glow", low=11, high=14, param=(seed * 97 + 13) % 256, tone=14)
+        h.node(pts, kind="glow", low=11, high=15, param=hash32(seed, 7, 9) & 255, tone=15)
 
     # --- behind the track
     # B: the tall dark tower left of centre, with a plant room on its roof and lit strips
@@ -455,25 +464,25 @@ def city():
     u = 6.5
     for ch in "OP-XY":
         pts = [tw.L(u + p[0], 10 + p[1]) for p in strokes(GLYPHS[ch], 1.6)]
-        t.node(pts, kind="glyph", low=8, high=14, tone=13)
+        t.node(pts, kind="glyph", low=12, high=15, tone=13)
         u += GLYPH_WIDTH[ch] + 1.4
     for u0, w0, du in [(8, 72, 18), (8, 76.5, 11)]:
-        t.node(quad(tw.L, u0, w0, du, 1.8), kind="glyph", low=8, high=14, tone=13)
+        t.node(quad(tw.L, u0, w0, du, 1.8), kind="glyph", low=12, high=15, tone=13)
     # the patterns, one shown: sine as circles, saw as ramps, square as a checker, pulse as thin bars
     cu, cw = 23, 46
-    t.node(disc(tw.L, cu, cw, 6, 14), kind="pattern", param=0, low=8, high=14, tone=13)
-    t.node(ring_outline(tw.L, cu, cw, 9.5, 12, 16), kind="pattern", param=0, low=8, high=14, tone=13)
+    t.node(disc(tw.L, cu, cw, 6, 14), kind="pattern", param=0, low=12, high=15, tone=13)
+    t.node(ring_outline(tw.L, cu, cw, 9.5, 12, 16), kind="pattern", param=0, low=12, high=15, tone=13)
     saw = []
     for k in range(3):
         u0 = 9 + k * 9.6
         saw += [tw.L(u0 + (0.4 if k else 0), 64 if k == 0 else 63), tw.L(u0 + 9.2, 30)]
         saw += [tw.L(u0 + 9.2, 63)] if k < 2 else [tw.L(u0 + 9.2, 64)]
-    t.node(saw, kind="pattern", param=1, low=8, high=14, tone=13)
+    t.node(saw, kind="pattern", param=1, low=12, high=15, tone=13)
     for r in range(5):
         for c in range(4):
             if (r + c) % 2 == 0:
-                t.node(quad(tw.L, 9 + c * 7.2, 29 + r * 7, 6.4, 6.2), kind="pattern", param=2, low=8, high=14, tone=13)
-    t.node(row(tw.L, 9.5, 29, 1.5, 35, 6, 5.2), kind="pattern", param=3, low=8, high=14, tone=13)
+                t.node(quad(tw.L, 9 + c * 7.2, 29 + r * 7, 6.4, 6.2), kind="pattern", param=2, low=12, high=15, tone=13)
+    t.node(row(tw.L, 9.5, 29, 1.5, 35, 6, 5.2), kind="pattern", param=3, low=12, high=15, tone=13)
     t.node([tw.L(46.3, 3), tw.L(47, 3), tw.L(47, 98), tw.L(46.3, 98)], kind="neon", low=5, high=15, tone=12)
     for k, (uu, vv, hh) in enumerate([(8, 6, 44), (36, 4, 50), (40, 30, 36)]):
         C.mast(t, *tw.T(uu, vv), hh, rings=k != 1, phase=k * 80)
@@ -534,15 +543,15 @@ def city():
     C.box_on("hg0", hg, 6, 4, 10, 8, 6, lid=6)
     C.box_on("hg1", hg, 22, 6, 8, 7, 4)
     s.fill(quad(hg.L, 3, 7, 34, 78), 4, occ=True)                       # the billboard's frame
-    s.node(quad(hg.L, 4.25, 8.25, 31.5, 75.5), kind="panel", low=10, high=14, tone=13, occ=True)
+    s.node(quad(hg.L, 4.25, 8.25, 31.5, 75.5), kind="panel", low=12, high=15, tone=14, occ=True)
     s.node([hg.L(9, 17), hg.L(32, 17), hg.L(20.5, 45)], kind="sand", param=0, tone=6, keep=True,
            sweep=[(0, 0), (0, -SAND_DRIFT)])
     s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=6, keep=True,
            sweep=[(0, 0), (0, SAND_DRIFT)])
     # the dot matrix: the panel's grey laid over the gaps between dots, rows and columns
-    s.node(column(hg.L, 5.5, 10.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
-    s.node(column(hg.L, 5.5, 46.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
-    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, 75, 9, 3, spine=0.6), kind="panel", low=10, high=14, tone=13)
+    s.node(column(hg.L, 5.5, 10.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
+    s.node(column(hg.L, 5.5, 46.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
+    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, 75, 9, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
     g(s, hg.R, 4, 8, 2, 12, 4, 1.8, 7, 6, 2, 13, 700)
     s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
     # far right: a tall tower with a grid of windows
@@ -602,8 +611,11 @@ def city():
             parts += [("screen", quad(cb.R, 0.8, 1.6, 5.4, 4.6), 2), ("lamp", quad(cb.R, 1.2, 8.4, 1.8, 1.2), 15)]
         for k in range(3):
             parts.append((f"door{k}", quad(cb.L, 9 + k * 14, 2.2, 1.6, 7), 8))
+        # every part of a car about its front corner, so it can run far off the screen's left
+        front = P(x1, 10, 83)
         for role, pts, tone in parts:
             train.node(pts, kind="train", role=f"car{car}.{role}", tone=tone, keep=True,
+                       pivot=(round(front[0]), round(front[1])),
                        sweep=[(-TRAIN_REACH, -TRAIN_REACH / 2), (TRAIN_REACH, TRAIN_REACH / 2)])
 
     # --- in front of the track
@@ -620,7 +632,7 @@ def city():
     s.faces((9, 6, 3))
     s.fill([sb.T(2, 2), sb.T(36, 2), sb.T(36, 10), sb.T(2, 10)], 6)
     s.fill(quad(sb.L, 2.5, 4, 33, 72), 4, occ=True)
-    s.node(quad(sb.L, 3.75, 5.25, 30.5, 69.5), kind="panel", low=10, high=14, tone=13, occ=True)
+    s.node(quad(sb.L, 3.75, 5.25, 30.5, 69.5), kind="panel", low=12, high=15, tone=14, occ=True)
     sun = [sb.L(19 + 9.5 * math.cos(math.pi * k / 10), 32 - 9.5 * math.sin(math.pi * k / 10)) for k in range(11)]
     s.fill(sun, 8)
     for k in range(4):
@@ -630,7 +642,7 @@ def city():
     # L: the low block at the bottom left: fans on its roof, a lit band on its face
     lb = tower(40, 190, 45, 20, 92)
     s = solid("fans", lb)
-    s.faces((8, 6, 3))
+    s.faces((7, 5, 2))
     s.fill([lb.T(2, 2), lb.T(43, 2), lb.T(43, 18), lb.T(2, 18)], 5)
     s.fill(quad(lb.L, 0, 6, 45, 6.5), 3)
     C.band(s, lb.L, 2, 7, 9, 3.4, 4.5, 4.8, 3, 14, 940)
@@ -639,8 +651,8 @@ def city():
     # Dd: the long low block with the dish and a mast
     dd = tower(150, 230, 96, 30, 132)
     s = solid("dish", dd)
-    s.faces((8, 6, 3))
-    s.fill([dd.T(2, 2), dd.T(94, 2), dd.T(94, 28), dd.T(2, 28)], 6)
+    s.faces((8, 5, 2))
+    s.fill([dd.T(2, 2), dd.T(94, 2), dd.T(94, 28), dd.T(2, 28)], 5)
     for k, (u0, v0, a0, b0, h0) in enumerate([(40, 6, 12, 10, 8), (60, 14, 9, 8, 6), (76, 4, 12, 12, 9)]):
         C.box_on(f"Dd{k}", dd, u0, v0, a0, b0, h0, lid=4 + k % 2)
     s.fill([dd.T(8, 16), dd.T(20, 16), dd.T(20, 26), dd.T(8, 26)], 2)
@@ -650,8 +662,8 @@ def city():
     # Bc: the block at the bottom centre: a plant room with vents
     bc = tower(292, 236, 80, 30, 132)
     s = solid("Bc", bc)
-    s.faces((8, 6, 3))
-    s.fill([bc.T(2, 2), bc.T(78, 2), bc.T(78, 28), bc.T(2, 28)], 6)
+    s.faces((8, 5, 2))
+    s.fill([bc.T(2, 2), bc.T(78, 2), bc.T(78, 28), bc.T(2, 28)], 5)
     r, rb = C.box_on("Bc0", bc, 34, 6, 18, 14, 11, lid=5)
     for k in range(3):
         r.fill(quad(rb.L, 2 + k * 5.5, 3, 3, 5), 2)
@@ -1053,6 +1065,10 @@ def train_course(sc):
     hi = 0
     while seen(hi + 1):
         hi += 1
+    for n in sc["nodes"]:
+        if n.kind == "train":
+            for d in (lo - 1, hi + 1):
+                assert -64 <= n.ox + d <= 640 and -64 <= n.oy + d / 2 <= 320, "the train runs past where a node can be"
     return lo - 1, hi + 1
 
 
@@ -1115,12 +1131,6 @@ def write_outlines(sc):
 
 # ------------------------------------------------------------------ a mirror of display.cpp's frame, for previews
 SLOW, FAST = 20, 90                   # display.cpp's train speeds, px a second
-
-
-def hash32(i, j, k):
-    h = (i * 374761393 + j * 668265263 + k * 1442695041) & 0xFFFFFFFF
-    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
-    return h ^ (h >> 16)
 
 
 def r16(i, j, k):
