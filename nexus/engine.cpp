@@ -7,17 +7,24 @@
 // Nexus: a two-layer polysynth after the Yamaha CS-80.
 //
 // Each voice plays two layers, as the CS-80 plays its channels I and II. Each
-// layer is a band-limited oscillator that morphs sine, saw, square and narrow
-// pulse, into its own 12 dB resonant state-variable low-pass. The layers play the same wave a few cents apart, so
-// they phase slowly against each other; layer I breathes a little noise, and
-// layer II, at its own footage, can be ring-modulated by a sine at a chosen ratio.
+// layer is a band-limited saw and pulse mixed by shape, into a 12 dB resonant
+// high-pass (lowcut) and a 12 dB resonant low-pass (bright) in series, then a
+// sine at the layer's pitch (sine), added after both filters and in phase
+// with the saw's fundamental. The pulse's width moves slowly, each layer at
+// its own rate. The layers play a few cents apart, so they phase slowly
+// against each other; layer I breathes a little noise, and layer II, at its
+// own footage, can be ring-modulated after its filters and sine.
 //
-// Touch is the brass swell: each note's filter starts dark and blooms over
-// about a second to near three times its resting cutoff, its resonance rising
-// with it, and holds bright while the note sounds; a vibrato arrives a little
-// later. Each voice does this slightly differently, so chords open unevenly.
-// Ribbon slides each note in from up to an octave away. Every voice drifts a
-// little in pitch and tone.
+// The filter envelope is the CS-80's, played by the engine: swell starts each
+// note's filter dark and blooms it over about a second to near three times its
+// resting cutoff, its resonance rising with it, and holds it bright while the
+// note sounds; a vibrato arrives a little later. Bite starts the note bright,
+// up to three octaves over the resting cutoff, and drops it quickly to the
+// swell's dark start, the brass blip. On key release (SDK 1.12's release
+// callback) the filter closes towards the dark start, so notes darken as they
+// fade. Both filters follow the envelope and the key together. Each voice does
+// this slightly differently, so chords open unevenly, and drifts a little in
+// pitch and tone.
 //
 // Then the CS-80's stereo: chorus sways the level between left and right while
 // a phase shift sweeps (two first-order allpasses a side), on one clock shared
@@ -25,10 +32,11 @@
 // (L = mono + side, R = mono - side). At chorus 0 and spread 0 both sides are
 // the mono voice.
 //
-// The Shift row (SDK 1.13) sits under the eight controls, in parameters 8..15:
-// balance, octave, lowcut, noise under page 1; spread, ratio, drift, slide under
-// page 2. Each is read once a block, and the work behind lowcut, noise, spread,
-// drift and a balance off centre is skipped where it isn't needed.
+// Parameters 0..7 are the two pages: shape, detune, bright, reso; chorus, ring,
+// swell, bite. The Shift row (SDK 1.13), 8..15: sine, octave, lowcut, noise
+// under page 1; balance, ratio, spread, drift under page 2. Each is read once a
+// block. The work behind bite, sine, lowcut, noise, ring, spread, drift and a
+// balance off centre is skipped where it isn't needed.
 //
 // Integer arithmetic only: oscillators in Q15 with 16 x 16 multiplies,
 // filters in Q26 signals and Q31 coefficients. Divisions run once a block.
@@ -42,6 +50,9 @@ const i32 breath_full = 19868;           // Q15 at noise 100: 0.35 of gaussian b
 const i32 drift_reach = 1964;            // Q16 octaves at drift 100: the pitch wander's reach, 0.36 semitones
 const i32 drift_sine = 220;              // Q16 octaves at drift 100: the slow pitch wobble, 0.04 semitones
 const i32 tone_wander = 5676;            // Q16 octaves at drift 100: the cutoff's wobble, 6%
+const i32 lowcut_step = 4354;            // Q16 octaves a lowcut step: 20 Hz x 100^(step / 100)
+const i32 high_follow = 26214;           // Q15: the high-pass's resonance is 0.8 of the low-pass's
+const i32 high_most = 29491;             // Q15: and at most 0.9, below self-oscillation
 // Output: 0.2 of full scale per model unit, each layer at cos 45 degrees (balance
 // 50), from Q26 with a shift of 3. A chord of eight peaks near 0.4 to 0.8.
 const i32 output_gain = 1214800200;      // Q31: 0.2 x 0.7071 x 32 / 8
@@ -134,36 +145,47 @@ static inline i32 smooth(i32 u) {
 }
 
 // ------------------------------------------------------------------ one layer
-// How the shape control mixes an oscillator, Q15: the saw, a second saw `width`
-// ahead (subtracted, it makes a pulse) and a sine.
-enum Mode { sine_only, sine_saw, saw_only, saw_pulse };
-struct Wave { Mode mode; i32 saw, pulse, sine; u32 width; };
+// The source: the saw alone, or the saw and a pulse together (a saw less a
+// second saw `width` ahead), or, at sine 100, the sine alone.
+enum Mode { saw_only, saw_pulse, sine_alone };
+struct Wave { Mode mode; i32 saw, pulse, centre; };   // Q15 levels, and the pulse's centre width (Q16 of a cycle)
+// shape 0 is the saw; the pulse fades in beside it to 40, the saw fades out to
+// 70 (a square), then the pulse narrows to 12% at 100. Where both sound their
+// levels add to 1, the pulse at 0.9. Within 2% of the saw, the saw alone.
 static inline Wave wave_of(i32 s) {
     Wave w;
-    w.width = 0x80000000u;
-    w.pulse = 0;
-    if (s < 10923) {
-        // sine to saw
-        const i32 u = s * 3;
-        w.saw = u;
-        w.sine = 32767 - u;
-        w.mode = u < 655 ? sine_only : w.sine < 655 ? saw_only : sine_saw;   // within 2%: one wave
-        if (w.mode == sine_only) w.sine = 32767;
-        if (w.mode == saw_only) w.saw = 32767;
-    } else if (s < 21845) {
-        // saw to square: (1 - u) saw + 0.9 u square, the square a saw less a saw half a cycle on
-        const i32 u = (s - 10923) * 3;
-        w.saw = 32767 - ((u * 3277) >> 15);
-        w.pulse = (u * 29491) >> 15;
-        w.sine = 0;
-        w.mode = w.pulse ? saw_pulse : saw_only;
+    w.centre = 32768;
+    if (s <= 0) {
+        w.mode = saw_only;
+        w.saw = 32767;
+        w.pulse = 0;
+        return w;
+    }
+    i32 ws, wp, centre = 32768;
+    if (s <= 13107) {                                                  // 0..40
+        ws = 32768;
+        wp = (s * 5) >> 1;
+    } else if (s <= 22938) {                                           // 40..70
+        ws = 32768 - (((s - 13107) * 10) / 3);
+        wp = 32768;
+    } else {                                                           // 70..100
+        ws = 0;
+        wp = 32768;
+        centre = 32768 - (((s - 22938) * 83018) >> 15);
+    }
+    const u32 total = static_cast<u32>(ws + wp) >> 2;                  // 8192..16384
+    const i32 pulse = static_cast<i32>(opxy::divide::quotient16(static_cast<u32>((wp * 29491) >> 15) << 13, total));  // 0.9 wp / (ws + wp)
+    const i32 saw = static_cast<i32>(opxy::divide::quotient16(static_cast<u32>(ws) << 13, total));
+    w.centre = centre;
+    if (pulse < 655) {
+        w.mode = saw_only;
+        w.saw = 32767;
+        w.pulse = 0;
     } else {
-        // the square narrows to a 12% pulse, at 0.9
-        const i32 t = clamp((s - 21845) * 3, 0, 32767);
-        w.width = static_cast<u32>(32768 - ((t * 12452) >> 15)) << 16;
-        w.saw = w.pulse = 29491;
-        w.sine = 0;
+        // o = saw' x saw + pulse' x (saw - saw ahead) = (saw' + pulse') saw - pulse' saw ahead
         w.mode = saw_pulse;
+        w.saw = clamp(saw + pulse, 0, 32767);
+        w.pulse = pulse;
     }
     return w;
 }
@@ -182,41 +204,35 @@ static inline i32 saw(u32 phase, u32 step, u32 reciprocal) {
     return s;
 }
 
-struct Filter { i32 a1, g; };   // 1 / (1 + g (g + k)), and g / 4, Q31
+// A state-variable filter's coefficients: 1 / (1 + g (g + k)) and g / 4 for the low-pass;
+// for the high-pass, see high_of.
+struct Filter { i32 a1, g, k; };
 struct Layer {
-    u32 phase, step, reciprocal;
-    u32 ring_phase, ring_step;
-    i32 ring_dry, ring_wet;     // Q14: (1 - ring) and 1.4 ring
+    u32 phase, step, reciprocal, width;
     u32 noise;
     i32 breath;                 // the noise's level, Q15
-    i32 ic1, ic2;
+    i32 ic1, ic2;               // the low-pass's states
 };
 
-// A layer over a block: oscillator, breath or ring, low-pass, into out (Q26).
-template <Mode M, bool Noise, bool Ring>
+// A layer over a block: oscillator and breath into the low-pass, into out (Q26).
+template <Mode M, bool Noise>
 __attribute__((noinline)) static void layer(Layer& l, const Wave& w, const Filter& f, i32* __restrict out) {
-    u32 phase = l.phase, noise = l.noise, ring_phase = l.ring_phase;
-    const u32 step = l.step, reciprocal = l.reciprocal, ring_step = l.ring_step, width = w.width;
-    const i32 ws = w.saw, wp = w.pulse, wn = w.sine, dry = l.ring_dry, wet = l.ring_wet, breath = l.breath;
+    u32 phase = l.phase, noise = l.noise;
+    const u32 step = l.step, reciprocal = l.reciprocal, width = l.width;
+    const i32 ws = w.saw, wp = w.pulse, breath = l.breath;
     const i32 a1 = f.a1, g = f.g;
     i32 ic1 = l.ic1, ic2 = l.ic2;
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
         phase += step;
         i32 o;
-        if (M == sine_only) o = sine(phase);
-        else if (M == sine_saw) o = (product(saw(phase, step, reciprocal), ws) + product(sine(phase), wn)) >> 15;
-        else if (M == saw_only) o = saw(phase, step, reciprocal);
+        if (M == saw_only) o = saw(phase, step, reciprocal);
         else o = (product(saw(phase, step, reciprocal), ws) - product(saw(phase + width, step, reciprocal), wp)) >> 15;
         if (Noise) {
             noise = noise * 1664525u + 1013904223u;
             o += product(static_cast<i32>(noise) >> 16, breath) >> 15;
         }
-        if (Ring) {
-            ring_phase += ring_step;
-            o = (o * (dry + (product(sine(ring_phase), wet) >> 15))) >> 14;
-        }
         // into the filter at half level, Q26
-        const i32 x = (Ring ? clamp(o, -65534, 65534) : o) * 1024;
+        const i32 x = o * 1024;
         // 12 dB state-variable low-pass (trapezoidal), in three multiplies:
         // v1 = a1 (ic1 + g v3), v2 = ic2 + g v1
         const i32 v3 = x - ic2;
@@ -228,48 +244,103 @@ __attribute__((noinline)) static void layer(Layer& l, const Wave& w, const Filte
     }
     l.phase = phase;
     l.noise = noise;
-    l.ring_phase = ring_phase;
     l.ic1 = ic1;
     l.ic2 = ic2;
 }
-
-template <bool Noise, bool Ring>
+template <bool Noise>
 static inline void run_layer(Layer& l, const Wave& w, const Filter& f, i32* out) {
-    switch (w.mode) {
-    case sine_only: layer<sine_only, Noise, Ring>(l, w, f, out); break;
-    case sine_saw: layer<sine_saw, Noise, Ring>(l, w, f, out); break;
-    case saw_only: layer<saw_only, Noise, Ring>(l, w, f, out); break;
-    default: layer<saw_pulse, Noise, Ring>(l, w, f, out); break;
-    }
+    if (w.mode == saw_only) layer<saw_only, Noise>(l, w, f, out);
+    else layer<saw_pulse, Noise>(l, w, f, out);
 }
 
-// Balance off centre and the low cut, on a layer's block in place: the level
-// (Q10, 1024 is unity), then a one-pole high-pass. Skipped at balance 50, lowcut 0.
-template <bool Level, bool Cut>
-__attribute__((noinline)) static void trim(i32* __restrict out, i32 level, i32 cut, i32* state) {
-    const i32 gain = level << 20;                                      // Q31, half the level
-    i32 low = *state;
+// At sine 100: the sine alone, the oscillator and both filters skipped.
+__attribute__((noinline)) static void sine_layer(u32 phase, u32 step, i32 level, i32* __restrict out) {
     for (unsigned i = 0; i < opxy::block_frames; ++i) {
-        i32 x = out[i];
-        if (Level) x = multiply(x, gain) * 2;
-        if (Cut) {
-            low += multiply(cut, x - low);
-            x -= low;
-        }
-        out[i] = x;
-    }
-    *state = low;
-}
-static inline void trim_layer(i32* out, i32 level, i32 cut, i32* state) {
-    if (level != 1024) {
-        if (cut) trim<true, true>(out, level, cut, state);
-        else trim<true, false>(out, level, cut, state);
-    } else if (cut) {
-        trim<false, true>(out, level, cut, state);
+        phase += step;
+        out[i] = -(product(sine(phase), level) >> 5);
     }
 }
 
-// The low-pass's coefficients for a cutoff (Q16 octaves above 20 Hz) and k = 2 - 1.94 reso (Q28).
+// After a layer's low-pass, in place: the high-pass (lowcut). The two filters
+// are linear and keep their coefficients through the block, so the high-pass
+// after the low-pass is the high-pass before it. Skipped at lowcut 0.
+__attribute__((noinline)) static void high_pass(i32* __restrict out, const Filter& h, i32* state) {
+    const i32 a1 = h.a1, g = h.g, gk = h.k;
+    i32 s1 = state[0], s2 = state[1];
+    for (unsigned i = 0; i < opxy::block_frames; ++i) {
+        // 12 dB state-variable high-pass (trapezoidal), solved for its output:
+        // hp = (x - (g + k) s1 - s2) / (1 + g (g + k)), then the two integrators
+        const i32 hp = multiply(a1, out[i] - s2 - multiply(gk, s1) * 4);
+        const i32 t = multiply(g, hp);
+        const i32 bp = s1 + t;
+        s1 = bp + t;
+        const i32 u = multiply(g, bp);
+        s2 += u + u;
+        out[i] = hp;
+    }
+    state[0] = s1;
+    state[1] = s2;
+}
+
+// Then the sine, at the layer's pitch and in phase with the saw's fundamental
+// (-sin), at half level times sine (Q15), with the filtered sound faded by
+// `fade` (Q30) past sine 50. Skipped at sine 0.
+template <bool Fade>
+__attribute__((noinline)) static void add_sine(i32* __restrict out, u32 phase, u32 step, i32 fade, i32 level) {
+    for (unsigned i = 0; i < opxy::block_frames; ++i) {
+        phase += step;
+        const i32 x = Fade ? multiply(out[i], fade) * 2 : out[i];
+        out[i] = x - (product(sine(phase), level) >> 5);
+    }
+}
+
+// The layer after its low-pass: the high-pass, then the sine.
+static inline void finish_layer(i32* out, bool high, const Filter& h, i32* state, u32 phase, u32 step, i32 fade,
+                                i32 level) {
+    if (high) high_pass(out, h, state);
+    else state[0] = state[1] = 0;
+    if (level) {
+        if (fade < (1 << 30)) add_sine<true>(out, phase, step, fade, level);
+        else add_sine<false>(out, phase, step, fade, level);
+    }
+}
+
+// After a layer's filters and sine, in place: layer II's ring modulation and
+// the balance's level, or the level alone. The ring's factor (1 - ring) +
+// 1.4 ring x sine, Q14, carries the level (dry and wet are scaled by it).
+// Skipped at ring 0 and balance 50.
+template <bool Ring>
+__attribute__((noinline)) static void after(i32* __restrict out, i32 level, i32 dry, i32 wet, u32* ring) {
+    u32 phase = ring[0];
+    const u32 step = ring[1];
+    const i32 gain = level << 20;                                      // Q31, half the level (Q10)
+    for (unsigned i = 0; i < opxy::block_frames; ++i) {
+        if (Ring) {
+            phase += step;
+            const i32 m = dry + (product(sine(phase), wet) >> 15);     // Q14
+            out[i] = multiply(out[i], m << 15) * 4;
+        } else {
+            out[i] = multiply(out[i], gain) * 2;
+        }
+    }
+    ring[0] = phase;
+}
+
+// The high-pass's coefficients for a cutoff (Q16 octaves above 20 Hz, held below
+// 10.2 kHz so that g < 1) and k (Q28): 1 / (1 + g (g + k)), g and (g + k) / 4, Q31.
+static inline Filter high_of(i32 octaves, i32 k) {
+    const i32 g = at_quarter(tables::tangent, octaves < 9 * 65536 ? octaves : 9 * 65536);   // Q28
+    const i32 d = (1 << 25) + multiply(g, g + k);                      // 1 + g (g + k), Q25
+    u32 n = 0xffffffffu / static_cast<u32>(d >> 9);                    // 1 / d, Q16
+    if (n > 65535u) n = 65535u;
+    Filter f;
+    f.a1 = static_cast<i32>(n << 15);                                  // Q31
+    f.g = g << 3;                                                      // Q31
+    f.k = (g + k) << 1;                                                // (g + k) / 4, Q31
+    return f;
+}
+
+// The filters' coefficients for a cutoff (Q16 octaves above 20 Hz) and k = 2 - 1.94 reso (Q28).
 static inline Filter filter_of(i32 octaves, i32 k) {
     const i32 g = at_quarter(tables::tangent, octaves);                // Q28
     const i32 d = (1 << 25) + multiply(g, g + k);                      // 1 + g (g + k), Q25
@@ -278,6 +349,7 @@ static inline Filter filter_of(i32 octaves, i32 k) {
     Filter f;
     f.a1 = static_cast<i32>(n << 15);                                  // Q31
     f.g = g * 2;                                                       // g / 4, Q31
+    f.k = 0;
     return f;
 }
 
@@ -348,16 +420,17 @@ inline void initialize(Voice& voice, Shared& shared, u32 owner) {
     voice.random = engine::next(seed) | 1u;
     voice.noise = engine::next(voice.random) | 1u;
     for (unsigned k = 0; k < 3; ++k) voice.phase[k] = engine::next(voice.random);   // free-running, starting apart
-    for (unsigned k = 0; k < 4; ++k) voice.low[k] = 0;
+    for (unsigned k = 0; k < 4; ++k) voice.low[k] = voice.high[k] = 0;
     for (unsigned k = 0; k < 6; ++k) voice.pass[k] = 0;
-    voice.cut[0] = voice.cut[1] = 0;
     voice.blocks = 0;
-    voice.slide = 0;
     voice.vibrato = voice.vibrato_rate = 0;
     voice.vibrato_delay = voice.rise_extra = 0;
     voice.wander_phase = voice.wander_rate = 0;
     voice.tone_phase = engine::next(voice.random);
     voice.drift_from = voice.drift_to = 0;
+    voice.width_phase[0] = voice.width_phase[1] = 0;
+    voice.width_rate[0] = voice.width_rate[1] = 0;
+    voice.released = voice.closing_from = voice.swell_from = 0;
     voice.cycle = shared.cycle - 1;   // not yet counted in this cycle
 }
 
@@ -365,7 +438,7 @@ inline void start(Voice& voice, Shared&, u32) {
     // each note blooms, wobbles and drifts a little differently
     const u32 r = engine::next(voice.random);
     voice.blocks = 0;
-    voice.slide = 32767;
+    voice.released = 0;
     voice.vibrato = 0;
     voice.vibrato_rate = 34905130u + (r >> 16) * 57u;              // 5.6 Hz + 0.6 Hz x r
     voice.vibrato_delay = 379 + static_cast<i32>(((r & 0xffffu) * 172u) >> 16);  // 0.55 s + 0.25 s x r
@@ -374,6 +447,17 @@ inline void start(Voice& voice, Shared&, u32) {
     voice.wander_rate = 810297u + (((q & 0xffffu) * 19478u) >> 12);         // 0.13 Hz + 0.05 Hz x r
     voice.wander_phase = engine::next(voice.random);
     voice.drift_from = voice.drift_to;
+    // the pulse widths' slow movement: 0.5 Hz + 0.3 Hz x r a layer, from anywhere in its cycle
+    for (unsigned k = 0; k < 2; ++k) {
+        const u32 w = engine::next(voice.random);
+        voice.width_rate[k] = 3116531u + (((w >> 24) * 1869919u) >> 8);
+        voice.width_phase[k] = engine::next(voice.random);
+    }
+}
+
+// The key is released: the filter starts to close (in render, which has the controls).
+inline void release(Voice& voice, Shared&, u32) {
+    if (!voice.released) voice.released = 1;
 }
 
 inline void destroy(Voice&, Shared&, u32) {}
@@ -392,25 +476,26 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output,
     ++voice.blocks;
 
     const i32 shape = q15(p[0]), detune = q15(p[1]), bright = q15(p[2]), reso = q15(p[3]);
-    const i32 depth = q15(p[4]), ring = q15(p[5]), touch = q15(p[6]), ribbon = q15(p[7]);
-    const i32 tc = touch * 2;                                          // Q16
-    // The Shift row: balance, octave (16', 8', 4', 2'), lowcut, noise; spread, ratio, drift, slide.
-    const i32 balance = step_of(p[8]), lowcut = step_of(p[10]);
+    const i32 depth = q15(p[4]), ring = q15(p[5]), swell = q15(p[6]), bite = q15(p[7]);
+    const i32 tc = swell * 2;                                          // Q16
+    // The Shift row: sine, octave (16', 8', 4', 2'), lowcut, noise; balance, ratio, spread, drift.
+    const i32 sine_amount = q15(p[8]);
     const i32 footage = (static_cast<i32>(choice_of(p[9], 4)) - 1) * 65536;   // layer II, Q16 octaves from 8'
+    const i32 lowcut = step_of(p[10]);
     const i32 breath = (q15(p[11]) * breath_full) >> 15;
+    const i32 balance = step_of(p[12]);
+    const u32 ratio = choice_of(p[13], 8);
     // Half the spread, Q31: about 0.5 at 100, and at 40 exactly what chorus 45 spread before
     // the row (0.889 x chorus), so Tyrell is unchanged.
-    const i32 spread_step = step_of(p[12]);
+    const i32 spread_step = step_of(p[14]);
     const i32 half_spread = spread_step * 10738046 + (spread_step >> 2);
-    const u32 ratio = choice_of(p[13], 8);
-    const i32 drift = q15(p[14]);
+    const i32 drift = q15(p[15]);
 
-    // ---- pitch, Q16 octaves: the ribbon's slide, touch's late vibrato, drift
-    i32 common = ((ribbon - 16384) * 4 * (voice.slide >> 3)) >> 12;   // +-1 octave x slide
-    voice.slide = (voice.slide * tables::slide[step_of(p[15])]) >> 15;
+    // ---- pitch, Q16 octaves: the swell's late vibrato, drift
+    i32 common = 0;
     voice.vibrato += voice.vibrato_rate;
     const i32 arrival = clamp((t - voice.vibrato_delay) * 106, 0, 65536);   // over 0.9 s
-    const i32 vibrato_depth = ((((arrival >> 1) * touch) >> 14) * 710) >> 16;        // 0.13 semitones at full
+    const i32 vibrato_depth = ((((arrival >> 1) * swell) >> 14) * 710) >> 16;        // 0.13 semitones at full
     common += (vibrato_depth * sine(voice.vibrato)) >> 15;
     const i32 reach = (drift * drift_reach) >> 15;
     if ((t & 511) == 0) {                                              // a new drift target every 0.74 s
@@ -431,7 +516,13 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output,
     const i32 apart = along(tables::detune, detune);
     const u32 base = pitch[0];
 
+    // ---- the source: shape's mix, each layer's pulse width moving slowly (+-22%)
+    const Wave w = wave_of(shape);
     Layer one, two;
+    for (unsigned k = 0; k < 2; ++k) voice.width_phase[k] += voice.width_rate[k];
+    const i32 sway_by = (w.centre * 7209) >> 15;                       // 0.22 of the centre width
+    one.width = static_cast<u32>(w.centre + ((sway_by * sine(voice.width_phase[0])) >> 15)) << 16;
+    two.width = static_cast<u32>(w.centre + ((sway_by * sine(voice.width_phase[1])) >> 15)) << 16;
     one.step = transpose(base, common - apart);
     two.step = transpose(base, common + apart + footage);
     one.reciprocal = 0xffffffffu / (one.step | 1u);
@@ -442,57 +533,113 @@ inline void render(Voice& voice, Shared& shared, u32, opxy::Output output,
     two.noise = 0;
     one.breath = breath;
     two.breath = 0;
-    one.ring_phase = one.ring_step = 0;
-    one.ring_dry = one.ring_wet = 0;
-    two.ring_phase = voice.phase[2];
-    two.ring_step = ring ? transpose(base, common + footage + tables::ratio[ratio]) : 0;
-    two.ring_dry = (32767 - ring) >> 1;                                // Q14
-    two.ring_wet = (ring * 22938) >> 15;                               // 1.4 ring, Q14
     one.ic1 = voice.low[0]; one.ic2 = voice.low[1];
     two.ic1 = voice.low[2]; two.ic2 = voice.low[3];
+    // sine: up to 50 the sine rises beside the filtered sound; from 50 to 100 the filtered sound fades out
+    const i32 fade = clamp(32768 - sine_amount, 0, 16384) << 16;       // the filtered sound's level, Q30
+    const bool alone = sine_amount >= 32767;                           // sine 100: the sine alone
 
-    // ---- touch: the bloom. The cutoff swells from dark along a slow S to its
-    // crescendo, then settles to a held brightness; resonance rises with it.
-    i32 bloom = 65536, swell = 0;                                      // Q16 linear, Q15
+    // ---- the filter envelope, in Q16 octaves on both filters' cutoffs.
+    // swell: from dark along a slow S to the crescendo, then settling to a held
+    // brightness; resonance rises with it.
+    i32 octaves = 0, rise = 0, dark = 0;                               // Q16 octaves, Q15, Q16 octaves
     if (tc) {
-        const i32 rise = 103 + ((tc * 655) >> 16) + voice.rise_extra;  // 0.15 + 0.95 touch (+ 0.08 r) s, in blocks
-        const i32 span = (tc * 3150) / 1000;                           // crescendo less start: 3.15 touch, Q16
-        if (t < rise) {
-            const i32 s = smooth(static_cast<i32>(opxy::divide::quotient16(static_cast<u32>(t) << 15, static_cast<u32>(rise))));
-            bloom = 65536 - ((touch * 55706) >> 15) + (((span >> 4) * s) >> 11);
-            swell = s;
+        i32 bloom;                                                     // Q16 linear
+        const i32 start_level = 65536 - ((swell * 55706) >> 15);       // 1 - 0.85 swell
+        const i32 rising = 103 + ((tc * 655) >> 16) + voice.rise_extra;   // 0.15 + 0.95 swell (+ 0.08 r) s, in blocks
+        const i32 span = (tc * 3150) / 1000;                           // crescendo less start: 3.15 swell, Q16
+        if (t < rising) {
+            const i32 s = smooth(static_cast<i32>(opxy::divide::quotient16(static_cast<u32>(t) << 15, static_cast<u32>(rising))));
+            bloom = start_level + (((span >> 4) * s) >> 11);
+            rise = s;
         } else {
-            const i32 e = fall((t - rise) * 86);                       // e^-(t / 1.6 s)
+            const i32 e = fall((t - rising) * 86);                     // e^-(t / 1.6 s)
             bloom = 65536 + (tc * 1725) / 1000 + ((((tc * 575) / 1000) * e) >> 15);
-            swell = 26788 + ((e * 5980) >> 15);
+            rise = 26788 + ((e * 5980) >> 15);
+        }
+        dark = log2_q16(static_cast<u32>(start_level)) - 16 * 65536;
+        octaves = log2_q16(static_cast<u32>(bloom)) - 16 * 65536;
+    }
+    // bite: the note starts up to 3 octaves over the resting cutoff and falls
+    // straight to the dark start in 0.07 + 0.15 swell s.
+    if (bite) {
+        const i32 dip = 48 + ((tc * 103) >> 16);                       // in blocks
+        if (t < dip) {
+            const i32 lift = (((3 * 65536 - dark) >> 4) * bite) >> 11;  // bite x (3 octaves less the dark start)
+            const i32 left = 32768 - static_cast<i32>(opxy::divide::quotient16(static_cast<u32>(t) << 15, static_cast<u32>(dip)));
+            octaves += ((lift >> 4) * left) >> 11;
         }
     }
-    const i32 resonance = clamp(reso + ((((touch * 10486) >> 15) * swell) >> 15), 0, 31785);
+    // released: close from where it was towards the dark start, time constant 0.12 + 0.35 swell s
+    if (voice.released) {
+        if (voice.released == 1) {
+            voice.closing_from = octaves;
+            voice.swell_from = rise;
+        }
+        const i32 after_blocks = voice.released - 1;
+        const i32 fade = fall((after_blocks * 137196) / (120 + ((tc * 350) >> 16)));   // e^-(t / tau), Q15
+        octaves = dark + ((((voice.closing_from - dark) >> 4) * fade) >> 11);
+        rise = (voice.swell_from * fade) >> 15;
+        if (voice.released < 4096) ++voice.released;
+    }
+    const i32 resonance = clamp(reso + ((((swell * 10486) >> 15) * rise) >> 15), 0, 31785);
     const i32 k = 536870912 - resonance * 15892;                       // 2 - 1.94 resonance, Q28
     const i32 key = ((log2_q16(base) - log2_q16(c4)) >> 4) * 29491 >> 12;   // 0.45 octave an octave
-    const i32 cutoff = 2 * 65536 + ((bright * 15655) >> 10) + key + (log2_q16(static_cast<u32>(bloom)) - 16 * 65536)
-                     + tone;
+    const i32 moved = key + octaves + tone;                            // what moves both filters
+    const i32 cutoff = 2 * 65536 + ((bright * 15655) >> 10) + moved;
     const Filter f1 = filter_of(cutoff, k), f2 = filter_of(cutoff + 3708, k);   // layer II 4% higher
+    // lowcut: the high-pass, its resonance following reso's at 0.8; off at 0
+    Filter h1 = {0, 0, 0}, h2 = {0, 0, 0};
+    if (lowcut) {
+        const i32 high_reso = (resonance * high_follow) >> 15;
+        const i32 high_k = 536870912 - (high_reso < high_most ? high_reso : high_most) * 15892;
+        const i32 high_cut = lowcut * lowcut_step + moved;
+        h1 = high_of(high_cut, high_k);
+        h2 = high_of(high_cut + 3708, high_k);
+    }
 
     // ---- the layers
-    const Wave w = wave_of(shape);
     i32 a[opxy::block_frames], b[opxy::block_frames];
-    if (breath) run_layer<true, false>(one, w, f1, a);
-    else run_layer<false, false>(one, w, f1, a);
-    if (ring) run_layer<false, true>(two, w, f2, b);
-    else run_layer<false, false>(two, w, f2, b);
+    const bool high = lowcut != 0;
+    const u32 from_one = one.phase, from_two = two.phase;
+    if (alone) {
+        sine_layer(from_one, one.step, sine_amount, a);
+        sine_layer(from_two, two.step, sine_amount, b);
+        one.phase = from_one + one.step * opxy::block_frames;
+        two.phase = from_two + two.step * opxy::block_frames;
+        one.ic1 = one.ic2 = two.ic1 = two.ic2 = 0;
+        for (unsigned k2 = 0; k2 < 4; ++k2) voice.high[k2] = 0;
+    } else {
+        if (breath) run_layer<true>(one, w, f1, a);
+        else run_layer<false>(one, w, f1, a);
+        run_layer<false>(two, w, f2, b);
+        if (high || sine_amount) {
+            finish_layer(a, high, h1, voice.high, from_one, one.step, fade, sine_amount);
+            finish_layer(b, high, h2, voice.high + 2, from_two, two.step, fade, sine_amount);
+        }
+    }
     voice.phase[0] = one.phase;
     voice.phase[1] = two.phase;
-    voice.phase[2] = two.ring_phase;
     voice.noise = one.noise;
     voice.low[0] = one.ic1; voice.low[1] = one.ic2;
     voice.low[2] = two.ic1; voice.low[3] = two.ic2;
-    if (balance != 50 || lowcut) {
-        const i32 cut = tables::lowcut[lowcut];
-        trim_layer(a, tables::balance[balance], cut, &voice.cut[0]);
-        trim_layer(b, tables::balance[100 - balance], cut, &voice.cut[1]);
+    // ---- after the filters: layer II's ring, and the balance off centre
+    const i32 level_one = tables::balance[balance], level_two = tables::balance[100 - balance];
+    if (ring) {
+        // the ring's sine at layer II's pitch times the ratio
+        u32 ring_state[2] = {voice.phase[2], transpose(base, common + footage + tables::ratio[ratio])};
+        const i32 dry = (((32767 - ring) >> 1) * level_two) >> 10;     // (1 - ring), Q14, at the level
+        const i32 wet = (((ring * 22938) >> 15) * level_two) >> 10;    // 1.4 ring, Q14, at the level
+        after<true>(b, 0, dry, wet, ring_state);
+        voice.phase[2] = ring_state[0];
+    } else if (level_two != 1024) {
+        u32 none[2] = {0, 0};
+        after<false>(b, level_two, 0, 0, none);
     }
-    if (!lowcut) voice.cut[0] = voice.cut[1] = 0;
+    if (level_one != 1024) {
+        u32 none[2] = {0, 0};
+        after<false>(a, level_one, 0, 0, none);
+    }
 
     // ---- the stereo stage: mono at chorus 0 and spread 0
     if (depth) {
