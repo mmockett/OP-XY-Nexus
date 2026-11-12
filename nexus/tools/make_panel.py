@@ -1011,7 +1011,8 @@ def merge(out):
         for ai, a in enumerate(live):
             if not alive[a]:
                 continue
-            for bi in t2.query(poly[a]):
+            # in index order: the tree's own order of equal boxes differs between C++ libraries
+            for bi in sorted(int(x) for x in t2.query(poly[a])):
                 b = live[int(bi)]
                 if b == a or not alive[b] or not alive[a] or out[a]["tone"] != out[b]["tone"]:
                     continue
