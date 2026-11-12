@@ -27,7 +27,8 @@ struct DisplayState {
     opxy::u32 frames, acc, worst, fps, worst_shown;   // the frame-rate readout (display.cpp's show_fps)
     opxy::i32 pace;           // the fans' and the road cars' pace, Q10: 1 while notes are held, easing to 0
     opxy::u32 spin[city::fans];   // each fan's turn, Q16: balance sets the two on the right's speeds
-    opxy::u32 vane;           // the duct fans' turn, Q16: which pose of their blades shows
+    opxy::u32 vane;           // the duct fans' turn, Q16: the pose their blades are due at
+    opxy::u8 vane_at[4];      // the pose each duct fan shows (three used): it steps on to the one due
     opxy::i32 road[city::cars];   // each road car's way along its loop, Q10 px
     opxy::u32 traffic;        // the road cars shown, a bit each: spread's, taken up as each is out of sight
     opxy::i32 ball;           // the ball on its spire, Q10 px down from its rest: easing to octave's step

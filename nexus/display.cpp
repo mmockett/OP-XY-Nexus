@@ -13,7 +13,8 @@
 //   detune  the hourglass's two halves of dark dots drift apart
 //   bright  more windows and background lights are lit, in a scattered order, and a fog comes in: one plain
 //           sheet of translucent white over the far city, under everything nearer, thicker as bright
-//           rises; at 0 there is none, and the far city is dark
+//           rises, in six even steps of the far city's lightness up to 12/32 at 100; below the first
+//           step there is none, and the far city is dark
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
 //   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes
@@ -21,7 +22,8 @@
 //   swell   how many dark windows glow with each note, and the pattern pulses while a note is held. The
 //           glow follows the track's amp envelope: up over its attack, down to its sustain over its decay,
 //           out over its release, through the greys between, each window a little after another
-//   bite    how high the flying car hovers over the helipad: at 0 it has landed
+//   bite    how high the flying car hovers over the helipad: at 0 it has landed. It is drawn as the city is,
+//           its nose to the front right
 // The Shift row's:
 //   sine    the two lines under the advert's pattern, short to long
 //   octave  the ball slides along the ball tower's spire: low at 16', high at 2', its rings with it
@@ -32,8 +34,8 @@
 //           to a stop toward either end
 //   ratio   where the dish points, a step apart for each of its eight steps
 //   spread  the road's traffic: two cars at 0, eight at 100
-//   drift   the flying car's wobble while it hovers and notes are held: a slow, small bob, sway and tilt;
-//           steady at 0
+//   drift   the flying car's wobble while it hovers and notes are held: a slow, small bob, and a slower
+//           drift across the roof's plane, a whole pixel across and a half down at a time; steady at 0
 // The Shift row's values reach the display whether or not Shift is held.
 //
 // The Shift row shows in the header while Shift is held.
@@ -44,7 +46,8 @@
 // points: what moves goes first, then the rest restyles within what's left, resuming where it
 // left off. What moves as one (the train, the ball, the dish, the craft, a duct fan's blades) is brought
 // up to date whole or waits a frame, and the train never waits. The fans' blades and the advert's lines are
-// reshaping outlines (nodes 0..3), redrawn whole when they change. Nothing changes at rest.
+// reshaping outlines (nodes 0..3), redrawn whole when they change; the duct fans' blades step through still
+// poses, about one a frame, and never skip one. Nothing changes at rest.
 namespace nexus {
 namespace screen {
 using namespace opxy::draw;
@@ -66,6 +69,8 @@ const i32 course = city::train_end - city::train_start + gap;   // the train's l
 const i32 road_gap = 30;                // px of its run a road car spends out of sight before it comes back
 const i32 glow_floor = 1024;            // released, the glow is out below this (1/64, Q16)
 const u32 fan_rate = 32768;             // the fans' turn while notes are held, Q16 turns a second: half a turn
+const u32 vane_rate = 65536;            // the duct fans': a turn a second, 24 of their poses (one a frame at 25 fps)
+const u32 vane_stagger = 65536 / (9 * city::vane_poses);   // each duct fan a third of a pose after the last
 
 static inline u32 hash(i32 i, i32 j, u32 k) {
     u32 h = static_cast<u32>(i) * 374761393u + static_cast<u32>(j) * 668265263u + k * 1442695041u;
@@ -123,12 +128,14 @@ static inline u32 between(u32 low, u32 high, u32 amount) {
     const u32 v = low + ((amount * (high - low + 1)) >> 16);
     return v > high ? high : v;
 }
-// The fog sheet for bright: hidden at 0, then the palette's white at rising opacity, its fog donors in turn
-// up to the fullest at 100.
+// The fog sheet for bright: hidden at 0 and up to the first donor's place, then the palette's white at rising
+// opacity, its fog donors in turn (city.h's fog_from: even steps of the far city's lightness) up to the
+// fullest at 100.
 static inline Node fog(u32 k, u32 bright) {
-    if (!bright) return parked();
-    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::fog_donor + ((bright * city::fog_donors) >> 16),
-                fill_and_stroke);
+    u32 d = 0;
+    while (d < city::fog_donors && bright >= city::fog_from[d]) ++d;
+    if (!d) return parked();
+    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::fog_donor + d - 1, fill_and_stroke);
 }
 // The advert's pattern for a shape: 1 ramps (the saw, to 30), 2 a checker (saw and pulse into the square,
 // to 85), 3 bars (the narrowing pulse). Pattern 0, circles, is drawn but not shown: shape has no sine now.
@@ -244,9 +251,15 @@ static inline u32 traffic(const Controls& c) { return 2 + ((c.spread * 6 + 32768
 // The ratio's and octave's steps.
 static inline u32 ratio_step(const Controls& c) { return (c.ratio * 8u) >> 16; }
 static inline u32 octave_step(const Controls& c) { return (c.octave * 4u) >> 16; }
-// The duct fan f's blade pose: VANE_POSES poses a ninth of a turn apart, each fan a third of a step after the last.
+// The duct fan f's blade pose for the time: vane_poses poses a third of a turn (where its three blades repeat)
+// round, each fan a third of a pose after the last; and the pose it shows next, one on from the pose shown
+// until it has caught up, so that a fan that waits a frame never skips a pose.
 static inline u32 vane_pose(const DisplayState& s, u32 f) {
-    return ((((s.vane + f * 2427u) & 0xffffu) * (3u * city::vane_poses)) >> 16) % city::vane_poses;
+    return ((((s.vane + f * vane_stagger) & 0xffffu) * (3u * city::vane_poses)) >> 16) % city::vane_poses;
+}
+static inline u32 vane_next(const DisplayState& s, u32 f) {
+    const u32 at = s.vane_at[f];
+    return s.fresh ? vane_pose(s, f) : at == vane_pose(s, f) ? at : (at + 1) % city::vane_poses;
 }
 
 // What a node that moves shows: on the clock, which runs only while the train does.
@@ -286,24 +299,28 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
         const i32 up = static_cast<i32>((c.bite * static_cast<u32>(rise)) >> 16);   // whole px
         if (city::kind[k] == city::shadow)
             return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit - up * 10, 0, keep);
-        // drift's wobble, while it hovers and notes are held (easing in and out with the pace): a slow bob,
-        // and a slower sway across with a tilt, in half pixels and whole degrees
+        // drift's wobble, while it hovers and notes are held (easing in and out with the pace): a slow bob, in
+        // half pixels, and a slower drift across the roof's plane (down-left and up-right, as the city's
+        // lines run), a whole pixel across and a half down at a time
         const i32 a = up ? static_cast<i32>((c.drift >> 6) * static_cast<u32>(s.pace) >> 10) : 0;   // Q10
         const i32 bob = halves((sway(clock * 29u) * city::craft_bob * a) >> 10);
-        const i32 across = sway(clock * 19u + 9000u);
-        const i32 sideways = halves((across * (city::craft_sway >> 4) >> 6) * a >> 10);
-        const Turn tilt = rotation(((across * city::craft_tilt * a + (1 << 19)) >> 20) * 10);
-        Node n = pose(city::home_x[k] * unit + sideways, (city::home_y[k] - up) * unit + bob, unit, 0, keep);
-        n.cos = tilt.cos;
-        n.sin = tilt.sin;
+        const i32 across = (((sway(clock * 19u + 9000u) * (city::craft_sway >> 4) >> 6) * a >> 10) + unit / 2) >> 10;
+        Node n = pose((city::home_x[k] - across) * unit, (city::home_y[k] - up) * unit + bob + across * (unit / 2),
+                      unit, 0, keep);
         if (p) {   // its beacon
             n.shade = city::slot[((clock + 300u) & 1023u) < 120u ? city::high[k] : city::low[k]];
             n.paint = fill_and_stroke;
         }
         return n;
     }
-    case city::vane:    // a duct fan's blades: the pose it's at shows, the others are hidden
-        return (p & 3u) == vane_pose(s, p >> 2) ? home(k, 0, keep) : parked();
+    case city::vane: {  // a duct fan's blades: the pose it shows next, its drawing turned half round for the
+        // second half of the poses; the others hidden
+        const u32 next = vane_next(s, p / city::vane_shapes);
+        if (p % city::vane_shapes != next % city::vane_shapes) return parked();
+        Node n = home(k, 9, stroke);
+        if (next >= city::vane_shapes) n.cos = -unit;
+        return n;
+    }
     case city::sign: {  // reso's grey; while notes are held, noise flickers each letter and the tube, in 62 ms
         // steps: dark now and then at noise 6, often and in pieces at 100
         const u32 grey = between(city::low[k], city::high[k], c.reso);
@@ -348,6 +365,10 @@ static inline void move(DisplayState& s, Frame& frame, const Controls& c, bool h
             for (u32 j = k; j < end; ++j) frame.nodes[j] = want[j - k];
             spent += cost;
             count += n;
+            if (city::kind[k] == city::vane) {
+                const u32 f = city::param[k] / city::vane_shapes;
+                s.vane_at[f] = static_cast<opxy::u8>(vane_next(s, f));
+            }
         }
         k = end;
     }
@@ -568,6 +589,7 @@ inline void display_reset(DisplayState& state) {
     state.pace = 0;
     for (opxy::u32 f = 0; f < city::fans; ++f) state.spin[f] = 0;
     state.vane = 0;
+    for (opxy::u32 f = 0; f < 4; ++f) state.vane_at[f] = 0;
     for (opxy::u32 k = 0; k < city::cars; ++k) state.road[k] = city::car_phase[k] * opxy::draw::unit;
     state.traffic = 0;
     state.ball = 0;
@@ -622,7 +644,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         const u32 rate = (((fan_rate * w) >> 10) * static_cast<u32>(state.pace)) >> 10;   // Q16 turns a second
         state.spin[f] = (state.spin[f] + ((rate * static_cast<u32>(dt)) >> 10)) & 0xffffu;
     }
-    state.vane = (state.vane + ((((fan_rate * static_cast<u32>(state.pace)) >> 10) * static_cast<u32>(dt)) >> 10)) & 0xffffu;
+    state.vane = (state.vane + ((((vane_rate * static_cast<u32>(state.pace)) >> 10) * static_cast<u32>(dt)) >> 10)) & 0xffffu;
     // Spread: the cars it shows. Each takes it up while out of sight, or at once when the road is still.
     const u32 shown = traffic(c);
     for (u32 k = 0; k < city::cars; ++k) {

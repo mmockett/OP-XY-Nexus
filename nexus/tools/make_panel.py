@@ -41,7 +41,7 @@ import sys
 
 import shapely
 import shapely.affinity
-from shapely.geometry import Polygon, box as rect
+from shapely.geometry import MultiPoint, Polygon, box as rect
 
 HERE = pathlib.Path(__file__).resolve().parent.parent
 DEFINITION = json.loads((HERE / "definition.json").read_text())
@@ -57,14 +57,18 @@ STAGE = rect(0, TOP, 480, BOTTOM)
 BUDGET = 200                      # display.cpp's budget: points of changed outlines a frame
 TRAIN_REACH = 320                 # px either way the train can be from home (for the depth order)
 CRAFT_RISE = 30                   # px the craft rises at bite 100 (display.cpp's rise)
-CRAFT_BOB, CRAFT_SWAY, CRAFT_TILT = 2, 1.5, 3   # drift 100's wobble: px up and down, px across, degrees (display.cpp's)
+CRAFT_BOB, CRAFT_SWAY = 2, 1.5    # drift 100's wobble: px up and down, and px across the roof's plane (display.cpp's)
 # Octave's steps (16', 8', 4', 2'): where the ball sits on the ball tower's spire, px down from where it rests at 8'.
 BALL_STEPS = (6, 0, -6, -12)
 BALL_TRACE = 16                   # points tracing the ball's circles: for the depth order, the checks and their cost
 # Ratio's eight steps: where the dish points, tenths of a degree clockwise (display.cpp's dish_angle).
 DISH_ANGLES = tuple(-350 + 100 * k for k in range(8))
 DISH_SWAY = 4                     # and how far it swings either way while notes are held, degrees
-VANE_POSES = 3                    # the duct fans' blade poses
+# The duct fans' blade poses: a third of a turn (where three blades repeat) in 15-degree steps. Half of them
+# are drawn: turned half round on the screen, a pose is the one a sixth of a turn on in the roof (three blades
+# turned 180 degrees are the same blades turned 60), so display.cpp shows the rest so.
+VANE_POSES, VANE_SHAPES = 8, 4
+VANE_STAGGER = 65536 // (9 * VANE_POSES)   # each duct fan a third of a step after the last (display.cpp's), Q16 turns
 # The road's cars: lane (world x), way (1 up the road to the right, -1 down it toward the viewer), speed
 # px a second along screen x, where it is drawn (world y), where it is on its run at rest (px), and its rank:
 # spread shows the cars ranked under 2 + 6 x spread, two at 0 and all eight at 100 (display.cpp's traffic()).
@@ -119,9 +123,12 @@ MID = (9, 7, 4)
 FAR = (10, 8, 5)
 HAZE = (5, 4, 3)                  # the far towers: dark; the fog over them lightens them
 # The palette: ten of the greys for the nodes (display.cpp rounds any grey to the nearest of them, the
-# darker of two), then six donors of white fog at rising opacity, on the screen's 1/32 alpha steps.
+# darker of two), then six donors of white fog at rising opacity, on the screen's 1/32 alpha steps. The
+# fog is at its fullest, 12/32, at bright 100: what bright 34% (488 Hz) showed when 24/32 was the top. Its
+# six levels are the even 32nds up to that (at most four decimals each), which of every six of the twelve
+# steps up to it climb most evenly in lightness over the far city (fog_levels()).
 PALETTE_TONES = [1, 2, 4, 6, 8, 10, 12, 13, 14, 15]
-FOG_ALPHA = [4, 8, 12, 16, 20, 24]                     # 32nds: even, so at most four decimals; 24 the fullest
+FOG_ALPHA = [2, 4, 6, 8, 10, 12]                       # 32nds; 12 the fullest
 FOG_DONOR = len(PALETTE_TONES)                         # the first fog donor's palette slot
 assert FOG_DONOR + len(FOG_ALPHA) == 16
 # The fog: one plain sheet of translucent white, the picture's width, from the header down past the last of
@@ -678,17 +685,19 @@ class City:
         self.fans.append(k)
 
     def duct(self, owner, bx, cu, cv, r):
-        """A smaller duct fan: its housing, and its blades in VANE_POSES still poses a third of a pose's turn
-        apart, one shown at a time (display.cpp steps through them while notes are held, which reads as the
-        blades turning, for a node or two a step instead of a reshaping outline every frame), and a hub."""
+        """A smaller duct fan: its housing, and its blades in VANE_POSES poses, a third of a turn (where three
+        blades repeat) in even steps, one shown at a time (display.cpp steps through them while notes are held,
+        about a step a frame, which reads as the blades turning: two nodes a step instead of a reshaping outline
+        every frame), and a hub. The first VANE_SHAPES are drawn, each about the fan's centre, on a whole pixel
+        so that turned half round (the rest) it stays put."""
         self.housing(owner, bx, cu, cv, r)
         j = self.ducts
         cx, cy = bx.T(cu, cv)
-        origin = (math.floor(cx), math.floor(cy))
-        for pose in range(VANE_POSES):
+        assert cx == int(cx) and cy == int(cy), "a duct fan's centre isn't on a whole pixel"
+        for pose in range(VANE_SHAPES):
             pts = [(x + cx, y + cy) for x, y in blades(r - 0.6, pose / (3 * VANE_POSES))]
-            owner.node(pts, kind="vane", param=j * 4 + pose, tone=9, low=9, high=9, outline=True, pivot=origin,
-                       lead=pose == 0)
+            owner.node(pts, kind="vane", param=j * VANE_SHAPES + pose, tone=9, low=9, high=9, outline=True,
+                       pivot=(int(cx), int(cy)), lead=pose == 0)
         owner.roof_disc(bx.T, cu, cv, 1.1, 6, 10)
         self.ducts += 1
 
@@ -811,7 +820,7 @@ def city():
     t.node([tw.L(46.3, 3), tw.L(47, 3), tw.L(47, 98), tw.L(46.3, 98)], kind="neon", low=5, high=15, tone=12)
     for k, (uu, vv, hh) in enumerate([(8, 6, 44), (36, 4, 50), (40, 30, 36)]):
         C.mast(t, *tw.T(uu, vv), hh, rings=k != 1, phase=k * 80)
-    C.duct(t, tw, 34, 12.5, 4.5)
+    C.duct(t, tw, 34, 12, 4.5)
 
     # small blocks right of the advert tower
     s, bx = C.building("F", 302, 100, 22, 26, -110, FAR)
@@ -1054,7 +1063,7 @@ def city():
     s.fill([dd.T(10, 18), dd.T(18, 18), dd.T(18, 24), dd.T(10, 24)], 4)
     dx, dy = dd.T(28, 10)
     C.mast(s, *dd.T(68, 6), 56, phase=200)
-    C.duct(s, dd, 35, 22, 4)
+    C.duct(s, dd, 34.5, 21.5, 4)
     # Bc: the block at the bottom centre: a plant room with vents
     bc = tower(292, 236, 80, 30, 132)
     s = solid("Bc", bc)
@@ -1065,7 +1074,7 @@ def city():
         r.fill(quad(rb.L, 2 + k * 5.5, 3, 3, 5), 2)
     for k in range(3):
         s.fill([bc.T(8 + k * 7, 18), bc.T(13 + k * 7, 18), bc.T(13 + k * 7, 25), bc.T(8 + k * 7, 25)], 2)
-    C.duct(s, bc, 18, 8.5, 4.6)
+    C.duct(s, bc, 17.5, 8.5, 4.6)
     # Rf: the block at the right: a wide base with lit floors, a box above with fans and marks
     rf = tower(462, 196, 54, 30, -12)
     s = solid("Rf", rf)
@@ -1114,24 +1123,43 @@ def city():
 
     craft = solid("craft", Box(hp.x0 + 10, hp.x0 + 36, hp.y0 + 10, hp.y0 + 36, hp.z1, hp.z1 + 40))
     cx, cy = hcx, hcy
-    craft.node(ellipse(cx, cy, 6, 2.6, 12), kind="shadow", tone=4, keep=True)
-    # the craft: a flying car, its nose to the right: two thruster pods on a keel under its hull, a
-    # dark canopy, a fin with a beacon, a headlight, and its underside in shadow
-    # (drift wobbles it: up to CRAFT_BOB px up and down, CRAFT_SWAY across and CRAFT_TILT degrees)
-    up = [(dx_, dy_) for dx_ in (-CRAFT_SWAY, CRAFT_SWAY) for dy_ in (CRAFT_BOB + 1, -CRAFT_RISE - CRAFT_BOB - 1)]
+    # the craft: a flying car drawn as the city is, its nose to the front right (along world x): two thruster
+    # pods joined by a keel under its hull, a tail fin with a beacon, a dark canopy and a headlight in its
+    # nose; its top light, its side mid and its nose dark. Each part is an outline in the craft's own
+    # measures (x along it, y across, z up from the pad, px), all on one pivot. Its shadow lies on the pad.
+    # (Drift wobbles it: up to CRAFT_BOB px up and down, and CRAFT_SWAY px across the roof's plane.)
+    def iso(x, y, z):
+        return (cx + x - y, cy + (x + y) / 2 - z)
+
+    def slab(plan, z0, z1):
+        return MultiPoint([iso(x, y, z) for x, y in plan for z in (z0, z1)]).convex_hull
+
+    def block(x0, x1, y0, y1, z0, z1):
+        return slab([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1)
+
+    def outline(g):
+        return [tuple(p) for p in list(shapely.simplify(g, 0.1).exterior.coords)[:-1]]
+    plan, zb, zt = [(-6, -2.5), (3, -2.5), (6.5, -1), (6.5, 1), (3, 2.5), (-6, 2.5)], 1.5, 3.5
+    craft.node([iso(7.5 * math.cos(2 * math.pi * k / 8), 3.6 * math.sin(2 * math.pi * k / 8), 0) for k in range(8)],
+               kind="shadow", tone=4, keep=True)
+    sway = [(dx_, dy_) for dx_ in (-CRAFT_SWAY, CRAFT_SWAY)
+            for dy_ in (CRAFT_BOB + 1 + CRAFT_SWAY / 2, -CRAFT_RISE - CRAFT_BOB - 1 - CRAFT_SWAY / 2)]
 
     def part(role, pts, tone=None, lead=False, **spec):
-        craft.node([(cx + x, cy + y) for x, y in pts], kind="craft", role=role, tone=tone, keep=not spec, lead=lead,
-                   sweep=up, spread=1.2, pivot=(round(cx), round(cy - 4)), **spec)      # one pivot: the parts move as one
-    part("thrusters", [(-8.6, -2.7), (-4.8, -2.7), (-4.8, -2.1), (4.8, -2.1), (4.8, -2.7), (8.4, -2.7), (8.9, -1.95),
-                       (8.4, -1.2), (4.8, -1.2), (4.8, -1.6), (-4.8, -1.6), (-4.8, -1.2), (-8.6, -1.2), (-9.1, -1.95)], 5,
-         lead=True)
-    part("hull", [(-8.2, -2.5), (-8.7, -4.1), (-7.8, -5.0), (-7.2, -6.7), (-6.1, -6.7), (-5.4, -5.0), (4.6, -4.9),
-                  (8.2, -4.2), (9.8, -3.2), (9.3, -2.6), (7.6, -2.4)], 12)
-    part("underside", [(-8.0, -3.15), (7.9, -3.05), (9.3, -2.6), (7.6, -2.4), (-8.2, -2.5)], 4)
-    part("canopy", [(-3.4, -4.95), (-1.8, -6.9), (2.0, -7.2), (4.0, -6.0), (4.9, -4.9)], 3)
-    part("headlight", [(8.9, -3.85), (9.8, -3.45), (8.9, -3.05), (8.3, -3.45)], 15)
-    part("beacon", [(-6.6, -7.9), (-5.9, -7.2), (-6.6, -6.5), (-7.3, -7.2)], 15, low=6, high=15, param=1)
+        craft.node(pts, kind="craft", role=role, tone=tone, keep=not spec, lead=lead, sweep=sway, spread=1.2,
+                   pivot=(round(cx), round(cy - 4)), **spec)      # one pivot: the parts move as one
+    pods = shapely.union_all([block(-6, 5.8, 1.6, 3.3, 0, 1.6), block(-6, 5.8, -3.3, -1.6, 0, 1.6),
+                              block(-3, 3, -1.6, 1.6, 0.5, 1.6)])
+    part("thrusters", outline(pods.convex_hull.difference(block(3, 9, -1.6, 1.6, -1, 1.6))), 2, lead=True)
+    fin = Polygon([iso(x, 0, z) for x, z in ((-6, zt), (-6.6, 6.6), (-7.4, 6.6), (-7.4, zb))])
+    part("hull", outline(shapely.union_all([slab(plan, zb, zt), fin])), 9)
+    part("top", [iso(x, y, zt) for x, y in plan], 13)
+    part("nose", [iso(6.5, y, z) for y, z in ((-1, zb), (1, zb), (1, zt), (-1, zt))], 4)
+    part("canopy", outline(MultiPoint([iso(x, y, zt) for x in (-1.5, 3.2) for y in (-1.6, 1.6)] +
+                                      [iso(x, y, 4.7) for x in (-0.7, 1.9) for y in (-1, 1)]).convex_hull), 1)
+    part("headlight", [iso(6.5, y, z) for y, z in ((-0.7, 2.2), (0.7, 2.2), (0.7, 2.9), (-0.7, 2.9))], 15)
+    bx_, by_ = iso(-7, 0, 7.3)
+    part("beacon", [(bx_, by_ - 0.8), (bx_ + 0.8, by_), (bx_, by_ + 0.8), (bx_ - 0.8, by_)], 15, low=6, high=15, param=1)
     CITY_DUCTS[0] = C.ducts
     return SOLIDS
 
@@ -1306,6 +1334,52 @@ def fog_sheet(far, cover):
     assert pts is not None and len(pts) <= FOG_POINTS, "the fog sheet doesn't fit in one outline"
     assert seen.difference(Polygon(pts)).area < 0.25, "the fog sheet misses some of what is seen of it"
     return pts, seen
+
+
+def fog_blend(v, k):
+    """The device's blend of the fog's white at k/32 over grey v (8 bits): its RGB565 red and green (blue as red),
+    as stock's span blitter does it (0x8d5ede3c: the fill-opacity's byte, scaled by full coverage, to 1/32 steps)."""
+    alpha = int(k / 32 * 255 + 0.5)
+    a = (((255 * alpha) >> 8) + 4) >> 3
+    r, g = v >> 3, v >> 2
+    return r + (((31 - r) * a) >> 5), g + (((63 - g) * a) >> 5)
+
+
+def lightness(rg):
+    """CIE L* of an RGB565 grey as the panel shows it (each channel's bits repeated to 8)."""
+    r, g = rg
+
+    def linear(c):
+        c /= 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    lr, lg = linear((r << 3) | (r >> 2)), linear((g << 2) | (g >> 4))
+    y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lr
+    return 116 * y ** (1 / 3) - 16 if y > 216 / 24389 else 24389 / 27 * y
+
+
+def fog_levels(sc):
+    """Where on bright's travel (Q16) each fog donor takes over: the far city's lightness under the fog, the
+    mean over what the fog is seen over by area, rises evenly with bright from none at 0 to the fullest at 100,
+    each donor showing where it is the nearest to that line. Returns those points and the lightness of each
+    level, none first."""
+    if "fog_from" in sc:
+        return sc["fog_from"], sc["fog_lightness"]
+    out = sc["out"]
+    at = next(i for i, e in enumerate(out) if e["kind"] == "node" and e["node"].kind == "fog")
+    seen = FOG_SEEN[0]
+    under = collections.Counter()
+    for e in out[:at]:
+        if e["kind"] == "fill":
+            under[TONES[e["tone"]]] += Polygon(e["pts"]).intersection(seen).area
+    under = {v: round(a) for v, a in under.items() if round(a)}
+    total = sum(under.values())
+    levels = [round(sum(a * lightness(fog_blend(v, k) if k else (v >> 3, v >> 2)) for v, a in under.items()) / total, 3)
+              for k in [0] + FOG_ALPHA]
+    low, top = levels[0], levels[-1]
+    fog_from = [math.ceil(65536 * ((levels[d] + levels[d + 1]) / 2 - low) / (top - low)) for d in range(len(FOG_ALPHA))]
+    assert 0 < fog_from[0] and all(a < b for a, b in zip(fog_from, fog_from[1:])) and fog_from[-1] < 65535
+    sc["fog_from"], sc["fog_lightness"], sc["fog_under"] = fog_from, levels, under
+    return fog_from, levels
 
 
 def half_y(y):
@@ -1795,14 +1869,12 @@ def write_panel(sc):
             # (the fog sheet spans the picture: a node's own outline has no limit, only a reshaping one's)
             check(n.rel, f"node {n.index} ({n.role})", None if n.spec.get("fog") else 63)
             t = grey(n.tone)
-            if n.path is not None:
-                paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
-            elif n.outline:
+            if n.path is not None or n.outline:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
             elif n.spec.get("fog"):
                 # authored translucent (an opaque fill would load without its alpha); repainted, its donor's
                 # opacity replaces this
-                paint = f'fill="#FFFFFF" fill-opacity="{num(FOG_ALPHA[-1] / 32)}"'
+                paint = f'fill="#FFFFFF" fill-opacity="{FOG_ALPHA[-1] / 32:g}"'
             else:
                 # a fill alone: kept, it is the still artwork's paint; repainted, the palette lends the
                 # fill (and its stroke), so an authored stroke would only be bytes
@@ -2027,11 +2099,13 @@ def write_tables(sc):
          "const opxy::i32 ball_step[4] = {" + ", ".join(map(str, BALL_STEPS)) + "};",
          "const opxy::i32 dish_angle[8] = {" + ", ".join(map(str, DISH_ANGLES)) + "};",
          f"const opxy::i32 dish_sway = {DISH_SWAY};",
-         f"// Drift 100's wobble of the craft: px up and down, px across (Q10) and degrees.",
-         f"const opxy::i32 craft_bob = {CRAFT_BOB}, craft_sway = {q10(CRAFT_SWAY)}, craft_tilt = {CRAFT_TILT};",
-         f"// The duct fans: {sc['ducts']}, each with {VANE_POSES} blade poses (param: fan x 4 + pose). The neon sign:",
+         f"// Drift 100's wobble of the craft: px up and down, and px across the roof's plane (Q10).",
+         f"const opxy::i32 craft_bob = {CRAFT_BOB}, craft_sway = {q10(CRAFT_SWAY)};",
+         f"// The duct fans: {sc['ducts']}, each with {VANE_POSES} blade poses, of which {VANE_SHAPES} are drawn (param: fan x",
+         f"// {VANE_SHAPES} + pose) and the rest are those turned half round. The neon sign:",
          f"// {len(SIGN_WORD)} letters (param 0..{len(SIGN_WORD) - 1}), then its tube (param {len(SIGN_WORD)}).",
-         f"const opxy::u32 ducts = {sc['ducts']}, vane_poses = {VANE_POSES}, sign_letters = {len(SIGN_WORD)};",
+         f"const opxy::u32 ducts = {sc['ducts']}, vane_poses = {VANE_POSES}, vane_shapes = {VANE_SHAPES}, "
+         f"sign_letters = {len(SIGN_WORD)};",
          "// The still artwork's round elements (SVG ellipses and circles) and the bound circles.",
          f"const opxy::u32 ellipses = {sc['rounds'].get('ellipse', 0)}, circles = {sc['rounds'].get('circle', 0)}, "
          f"bound_circles = {sum(1 for k in nodes if k.circle)};",
@@ -2043,6 +2117,10 @@ def write_tables(sc):
          "const unsigned char slot[16] = {" + ", ".join(str(PALETTE_TONES.index(snap(t))) for t in range(16)) + "};",
          f"const opxy::u32 fog_donor = {FOG_DONOR}, fog_donors = {len(FOG_ALPHA)};",
          "const unsigned char fog_alpha[fog_donors] = {" + ", ".join(map(str, FOG_ALPHA)) + "};",
+         "// Where on bright's travel (Q16) each fog donor takes over: below the first the fog is hidden. The",
+         "// far city's lightness under it (L*, " + ", ".join(f"{v:.1f}" for v in sc["fog_lightness"]) + ")",
+         "// then rises evenly with bright.",
+         "const opxy::u32 fog_from[fog_donors] = {" + ", ".join(map(str, sc["fog_from"])) + "};",
          f"// The windows that glow with a note: each note picks its own, about {GLOW} of them at swell 100",
          "// (glow_share of the windows, Q16).",
          f"const opxy::u32 glow_share = {glow_share(nodes)};",
@@ -2195,7 +2273,10 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
         elif kind == "fog":
             if not c["bright"]:
                 continue
-            shade = ("fog", FOG_ALPHA[(c["bright"] * len(FOG_ALPHA)) >> 16] / 32)
+            level = sum(1 for b in fog_levels(sc)[0] if c["bright"] >= b)
+            if not level:
+                continue
+            shade = ("fog", FOG_ALPHA[level - 1] / 32)
         elif kind == "ring":
             level = ring_level(c["ring"], p & 1)
             if not level:
@@ -2213,9 +2294,11 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
                     continue
                 shade = lo + (level - 1) * (hi - lo) // 2
         elif kind == "vane":
-            v = (vane + (p >> 2) * 2427) & 0xFFFF
-            if (p & 3) != ((v * 3 * VANE_POSES) >> 16) % VANE_POSES:
+            v = (vane + (p // VANE_SHAPES) * VANE_STAGGER) & 0xFFFF
+            pose = ((v * 3 * VANE_POSES) >> 16) % VANE_POSES
+            if p % VANE_SHAPES != pose % VANE_SHAPES:
                 continue
+            shade, turn = 9, 180 if pose >= VANE_SHAPES else 0
         elif kind == "sign":
             shade = between(lo, hi, c["reso"])
             if held and c["noise"]:
@@ -2242,10 +2325,10 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
                 sc_ = (1024 - up * 10) / 1024
             else:
                 a = ((c["drift"] >> 6) * int(pace * 1024)) >> 10 if up else 0
-                across = sway(clock * 19 + 9000)
-                y += -up + halves(((sway(clock * 29) * CRAFT_BOB * a) >> 10) / 1024)
-                x += halves((((across * (round(CRAFT_SWAY * 1024) >> 4)) >> 6) * a >> 10) / 1024)
-                turn = (across * CRAFT_TILT * a + (1 << 19)) >> 20
+                # across the roof's plane (down-left and up-right), whole px along screen x and half that down
+                across = ((((sway(clock * 19 + 9000) * (round(CRAFT_SWAY * 1024) >> 4)) >> 6) * a >> 10) + 512) >> 10
+                y += -up + halves(((sway(clock * 29) * CRAFT_BOB * a) >> 10) / 1024) + across / 2
+                x -= across
                 if p:
                     shade = hi if ((clock + 300) & 1023) < 120 else lo
         elif kind == "train":
@@ -2467,7 +2550,7 @@ def previews(out, sc):
     states += [(f"noise100-{k}", changed(noise=1, reso=.6), dict(held=True, clock=700 + 64 * k)) for k in range(3)]
     states += [(f"balance{v:03d}", changed(balance=v / 100), dict(held=True, spin=30000)) for v in (0, 100)]
     states += [(f"drift100-{k}", changed(drift=1, bite=.6), dict(held=True, clock=700 + 900 * k)) for k in range(3)]
-    states += [(f"vanes{k}", tyrell, dict(vane=k * 7282)) for k in range(3)]
+    states += [(f"vanes{k}", tyrell, dict(vane=k * 65536 // (3 * VANE_POSES))) for k in range(3)]
     # the windows' glow through a note at Tyrell's envelope (default.json's words, Q31), at bright 0 so each
     # glowing window shows: the note's start, mid-attack, the peak, sustain, mid-release and out
     tyrell_amp = [w << 16 for w in (12416, 32640, 29490, 21632)]
@@ -2499,6 +2582,7 @@ def main():
     sc["rounds"] = collections.Counter(e["shape"][0] for e in sc["out"] if e["kind"] == "round")
     sc["windows"] = window_stats()
     sc["glow_share"] = glow_share(sc["nodes"])
+    fog_levels(sc)
     size, fill_static = write_panel(sc)
     sc["fill"] = fill_static
     sc["course"] = train_course(sc)
@@ -2540,22 +2624,27 @@ def main():
     print(" ".join(f"{k}:{v[0]}n/{v[1]}p" for k, v in by.items()))
     shown, seen, has = sc["windows"]
     print(f"windows: {shown} shown; {100 * has / seen:.1f}% of each column's seen height")
+    steps = [b - a for a, b in zip(sc["fog_lightness"], sc["fog_lightness"][1:])]
+    print(f"fog: {', '.join(f'{k}/32 from {100 * b / 65536:.1f}%' for k, b in zip(FOG_ALPHA, sc['fog_from']))}; "
+          f"the far city ({', '.join(f'{v}: {a}' for v, a in sorted(sc['fog_under'].items()))} px^2) from L* "
+          f"{sc['fog_lightness'][0]:.1f} to {sc['fog_lightness'][-1]:.1f}, steps {', '.join(f'{s:.1f}' for s in steps)}")
     if "--preview" in sys.argv:
         previews(sys.argv[sys.argv.index("--preview") + 1], sc)
 
 
 # The SDK's two-page header block, as `sdk.py new --controls 8` writes it, with its
-# bars on nodes 0..7. It comes last, so it sits over the tops of the tallest towers.
+# bars on nodes 0..7, less the bars' transforms (each frame sets a bound element's whole transform:
+# docs/display.md). It comes last, so it sits over the tops of the tallest towers.
 HEADER = """
 <path d="M0,0 L480,0 L480,38 L0,38 Z" fill="#000000"/>
-<path id="velvet_node_0" transform="matrix(1 0 0 1 0 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#000000" stroke="#000000" stroke-width="0.5"/>
-<path id="velvet_node_1" transform="matrix(1 0 0 1 60 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#323232" stroke="#323232" stroke-width="0.5"/>
-<path id="velvet_node_2" transform="matrix(1 0 0 1 120 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#4B4B4B" stroke="#4B4B4B" stroke-width="0.5"/>
-<path id="velvet_node_3" transform="matrix(1 0 0 1 180 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#646464" stroke="#646464" stroke-width="0.5"/>
-<path id="velvet_node_4" transform="matrix(1 0 0 1 240 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#7D7D7D" stroke="#7D7D7D" stroke-width="0.5"/>
-<path id="velvet_node_5" transform="matrix(1 0 0 1 300 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#969696" stroke="#969696" stroke-width="0.5"/>
-<path id="velvet_node_6" transform="matrix(1 0 0 1 360 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#AFAFAF" stroke="#AFAFAF" stroke-width="0.5"/>
-<path id="velvet_node_7" transform="matrix(1 0 0 1 420 0)" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#CDCDCD" stroke="#CDCDCD" stroke-width="0.5"/>
+<path id="velvet_node_0" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#000000" stroke="#000000" stroke-width="0.5"/>
+<path id="velvet_node_1" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#323232" stroke="#323232" stroke-width="0.5"/>
+<path id="velvet_node_2" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#4B4B4B" stroke="#4B4B4B" stroke-width="0.5"/>
+<path id="velvet_node_3" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#646464" stroke="#646464" stroke-width="0.5"/>
+<path id="velvet_node_4" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#7D7D7D" stroke="#7D7D7D" stroke-width="0.5"/>
+<path id="velvet_node_5" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#969696" stroke="#969696" stroke-width="0.5"/>
+<path id="velvet_node_6" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#AFAFAF" stroke="#AFAFAF" stroke-width="0.5"/>
+<path id="velvet_node_7" d="M0,0 L60,0 L60,20 L0,20 Z" fill="#CDCDCD" stroke="#CDCDCD" stroke-width="0.5"/>
 <text id="velvet_text_0" transform="matrix(1 0 0 1 5 10)" fill="#CBCBCB" font-family="UniversNextPro-Light" font-size="10px">-</text>
 <text id="velvet_text_1" transform="matrix(1 0 0 1 125 10)" fill="#CBCBCB" font-family="UniversNextPro-Light" font-size="10px">-</text>
 <text id="velvet_text_2" transform="matrix(1 0 0 1 245 10)" fill="#000000" font-family="UniversNextPro-Light" font-size="10px">-</text>

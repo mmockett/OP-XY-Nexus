@@ -131,7 +131,7 @@ below. Tops are light, sides mid and dark.
 
 The windows light a few at a time, in a scattered order, never a column at
 once. Behind the near city hangs one sheet of fog, over the far towers and
-streets. As it thickens the far city pales almost to white, while the near city
+streets. As it thickens the far city pales to a light haze, while the near city
 stays sharp in front of it.
 
 At rest the city is still. While a note is held, a two-car train runs along
@@ -144,7 +144,7 @@ the note ends, everything eases to a stop where it is.
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
-| bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: the far city is dark. As it rises, the fog thickens to nearly white, and more windows and background lights come on |
+| bright | One fog sheet over the far city, and the window lights. At 0 there is no fog: the far city is dark. As it rises, the fog thickens in six even steps to a light haze at 100, and more windows and background lights come on |
 | reso | The advert, the billboards, the neon sign and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |
@@ -157,7 +157,7 @@ the note ends, everything eases to a stop where it is.
 | balance (Shift) | The two fans on the right-hand block, layer I's and layer II's: equal at 50; toward 0 layer II's slows almost to a stop, toward 100 layer I's |
 | ratio (Shift) | Where the dish points: a different angle for each of its eight steps |
 | spread (Shift) | The road's traffic: two cars at 0, more as it rises, eight at 100 |
-| drift (Shift) | The flying car's wobble while it hovers and a note is held: a slow, small bob, sway and tilt. At 0 it holds steady |
+| drift (Shift) | The flying car's wobble while it hovers and a note is held: a slow, small bob and a drift from side to side. At 0 it holds steady |
 
 With a note, each glowing window brightens a little after the one before:
 dark at the note's start, rising through the greys during the attack, white

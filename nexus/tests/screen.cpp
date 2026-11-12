@@ -4,13 +4,13 @@
 // nothing changing at rest, Shift held or not; the train and the road's cars running their loops
 // and coming and going only where they can't be seen; the fans turning a little every frame while
 // notes are held; bright bringing in one fog sheet over the far city, from none at 0 to its
-// fullest at 100, and lighting the windows, which run down every face, in a scattered order; the windows' glow following the amp
+// fullest at 100 (12/32, what bright 34% showed before), and lighting the windows, which run down every face, in a scattered order; the windows' glow following the amp
 // envelope through attack, decay, sustain and release, and stopping; sine setting the advert's lines
 // with Shift held or not; the rest of the Shift row: octave sliding the ball along its spire (its rings with
 // it), balance setting the right-hand fans' speeds, drift wobbling the craft, noise flickering the neon sign,
 // spread bringing in the road's cars and ratio turning the dish, each only when it changes or while notes are
 // held; the aircraft warning lights blinking slowly and the duct fans stepping through their poses while
-// held; the round parts as SVG ellipses and the ball as bound circles; how much changes a frame, in nodes and
+// held, a pose at a time, about one a frame; the round parts as SVG ellipses and the ball as bound circles; how much changes a frame, in nodes and
 // in the points of their outlines (the device redraws those, at a cost by their points), while notes are held
 // and while controls turn; and how much of the screen is filled, which the device pays for every frame.
 #include "../display.cpp"
@@ -511,9 +511,10 @@ int main() {
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
     }
 
-    // Bright brings in the fog: one plain sheet over the far city, hidden at 0 (the far city dark); as bright
-    // rises, painted from its donors (white at their opacity, city.h's fog_alpha,
-    // 32nds), never thinning, through every donor in turn, and at its fullest at 100.
+    // Bright brings in the fog: one plain sheet over the far city, hidden at 0 (the far city dark) and up to
+    // the first donor's place (city.h's fog_from); as bright rises, painted from its donors (white at their
+    // opacity, city.h's fog_alpha, 32nds), never thinning, through every donor in turn, and at its fullest
+    // at 100: 12/32, the opacity bright 34% (488 Hz) showed when the fullest was 24/32.
     {
         i32 s[8];
         slots_of(tyrell, s);
@@ -531,8 +532,9 @@ int main() {
             expect(still(s, 1000), "the screen changes at rest while bright is set");
             expect(settled(s), "the fog hasn't settled");
             const opxy::draw::Node& n = frame.nodes[sheet];
-            if (v == 0) {
-                expect(hidden(n), "the fog shows at bright 0");
+            if (v == 0) expect(hidden(n), "the fog shows at bright 0");
+            if (nexus::screen::q16(s[2]) < city::fog_from[0]) {
+                expect(hidden(n) && last == 0, "the fog shows before its first donor's place");
                 continue;
             }
             const bool donor = n.shade >= city::fog_donor && n.shade < city::fog_donor + city::fog_donors;
@@ -547,6 +549,8 @@ int main() {
         }
         expect(steps == city::fog_donors, "the fog skips a donor as bright rises");
         expect(last == city::fog_alpha[city::fog_donors - 1], "the fog isn't at its fullest at bright 100");
+        expect(last == 12, "the fog's fullest isn't 12/32");
+        expect(city::fog_from[0] > 0, "the fog shows at bright 0");
         for (u32 d = 1; d < city::fog_donors; ++d)
             expect(city::fog_alpha[d] > city::fog_alpha[d - 1], "the fog's donors don't rise in opacity");
         // Bright jumped from 0 to 100 at rest: the windows, background lights and fog restyle over a few
@@ -883,8 +887,9 @@ int main() {
     row.values[4] = defaults[4];
     expect(still(slots, 1701), "the fans don't stop once released");
 
-    // Drift wobbles the craft while it hovers and notes are held: steady at 0; at 100 it bobs, sways and tilts,
-    // slowly, a half pixel or a degree at a time; steady again once released.
+    // Drift wobbles the craft while it hovers and notes are held: steady at 0; at 100 it bobs, and drifts across
+    // the roof's plane (as the city's lines run, a pixel across and a half down), slowly, a pixel at a time,
+    // never tilting; steady again once released.
     {
         i32 s[8];
         for (int j = 0; j < 8; ++j) s[j] = slots[j];
@@ -894,7 +899,8 @@ int main() {
             row.values[7] = d ? 0x7fffffff : 0;
             for (int f = 0; f < 60; ++f) step(s, 1, 1750);
             u32 moves = 0;
-            i32 low = 1 << 30, high = -(1 << 30), left = 1 << 30, right = -(1 << 30), tilt = 0;
+            i32 low = 1 << 30, high = -(1 << 30), left = 1 << 30, right = -(1 << 30);
+            u32 tilted = 0;
             for (int f = 0; f < 400; ++f) {
                 step(s, 1, 1750);
                 const opxy::draw::Node &a = before.nodes[craft], &n = frame.nodes[craft];
@@ -907,15 +913,17 @@ int main() {
                 if (n.y > high) high = n.y;
                 if (n.x < left) left = n.x;
                 if (n.x > right) right = n.x;
-                if ((n.sin < 0 ? -n.sin : n.sin) > tilt) tilt = n.sin < 0 ? -n.sin : n.sin;
+                if (n.sin != 0 || n.cos != unit) ++tilted;
+                // across the roof's plane: each pixel across with half a pixel down the other way, bob aside
+                if (a.x != n.x) expect(n.x - a.x == unit || a.x - n.x == unit, "the craft drifts across in jumps");
             }
-            std::printf("drift %d: the craft moved in %u of 400 frames, %.1f px up and down, %.1f across, tilting %.1f degrees\n",
-                        d * 100, static_cast<unsigned>(moves), (high - low) / 1024.0, (right - left) / 1024.0,
-                        std::asin(tilt / 1024.0) * 57.29578);
+            std::printf("drift %d: the craft moved in %u of 400 frames, %.1f px up and down, %.1f across\n",
+                        d * 100, static_cast<unsigned>(moves), (high - low) / 1024.0, (right - left) / 1024.0);
+            expect(tilted == 0, "the craft tilts");
             if (!d) expect(moves == 0, "the craft wobbles at drift 0");
             if (d) {
                 expect(moves >= 20 && moves <= 300, "the craft doesn't wobble slowly at drift 100");
-                expect(high - low >= 3 * unit && right - left >= 2 * unit && tilt > 0, "the craft doesn't bob, sway and tilt at drift 100");
+                expect(high - low >= 3 * unit && right - left >= 2 * unit, "the craft doesn't bob and drift at drift 100");
             }
         }
         row.values[7] = defaults[7];
@@ -948,8 +956,8 @@ int main() {
     }
 
     // The aircraft warning lights blink slowly while notes are held, each on for about a quarter of a second in
-    // two; the duct fans step through their blade poses, one of each shown at a time and each a step on from the
-    // last; both still at rest.
+    // two; the duct fans step through their blade poses (those drawn, then the same turned half round), one of
+    // each shown at a time and each a step on from the last, about a step a frame; both still at rest.
     {
         const u32 warning = first_of(city::warning), duct = first_of(city::vane);
         expect(warning && duct, "no warning lights or duct fans");
@@ -965,7 +973,12 @@ int main() {
             for (u32 j = 0; j < city::ducts; ++j) {
                 u32 shown = 0, pose = 0;
                 for (u32 k = duct; k < city::node_count && city::kind[k] == city::vane; ++k)
-                    if (static_cast<u32>(city::param[k] >> 2) == j && !hidden(frame.nodes[k])) { ++shown; pose = city::param[k] & 3u; }
+                    if (city::param[k] / city::vane_shapes == j && !hidden(frame.nodes[k])) {
+                        ++shown;
+                        pose = city::param[k] % city::vane_shapes + (frame.nodes[k].cos < 0 ? city::vane_shapes : 0);
+                        expect(frame.nodes[k].sin == 0 && (frame.nodes[k].cos == unit || frame.nodes[k].cos == -unit),
+                               "a duct fan's blades turned other than half round");
+                    }
                 expect(shown == 1, "a duct fan shows other than one pose");
                 if (shown_at[j] != 99 && pose != shown_at[j]) {
                     expect(pose == (shown_at[j] + 1) % city::vane_poses, "a duct fan's blades skip a pose");
@@ -979,7 +992,7 @@ int main() {
                     static_cast<unsigned>(steps[1]), static_cast<unsigned>(steps[2]));
         expect(blinks >= 8 && blinks <= 12, "the warning lights don't blink slowly");
         expect(lit * 100 >= 8u * length && lit * 100 <= 20u * length, "the warning lights aren't on a quarter of a second in two");
-        for (u32 j = 0; j < city::ducts; ++j) expect(steps[j] >= 60, "a duct fan's blades don't turn while held");
+        for (u32 j = 0; j < city::ducts; ++j) expect(steps[j] * 2 >= static_cast<u32>(length), "a duct fan's blades don't step about a frame at a time while held");
         expect(still(slots, 1851), "the warning lights or duct fans don't stop once released");
     }
 
