@@ -91,7 +91,6 @@ NEAR = (9, 6, 3)
 MID = (9, 7, 4)
 FAR = (10, 8, 5)
 HAZE = (5, 4, 3)                  # the far towers: dark, as the sky is black; the fog over them lightens them
-CLOUD = 2                         # the clouds: still, a shade off the black sky
 # The palette: ten of the greys for the nodes (display.cpp rounds any grey to the nearest of them, the
 # darker of two), then six donors of white fog at rising opacity, on the screen's 1/32 alpha steps.
 PALETTE_TONES = [1, 2, 4, 6, 8, 10, 12, 13, 14, 15]
@@ -568,11 +567,7 @@ def city():
     C = City()
     g = C.grid
 
-    # --- the sky: black (the screen's own background), a few dark clouds, and the haze far behind
-    for k, pts in enumerate([ellipse(360, 58, 34, 30, 16), ellipse(318, 46, 20, 12, 12), ellipse(398, 44, 22, 14, 12),
-                             ellipse(30, 44, 26, 9, 12), ellipse(150, 42, 18, 7, 12)]):
-        c = solid(f"cloud{k}", Box(-2900 + 2 * k, -2899 + 2 * k, -2900, -2899, 0, 1))
-        c.fill(pts, CLOUD, occ=True)
+    # --- the sky: black (the screen's own background), and the haze far behind
     glows = []
     haze = [  # (fx, fy, a, b, spire)
         (16, 76, 18, 12, 0), (52, 56, 12, 10, 0), (126, 56, 12, 10, 1), (152, 70, 14, 10, 0), (260, 46, 18, 16, 0),
@@ -979,24 +974,25 @@ def order(solids):
     return out
 
 
-# The depth slices, back to front (the fog sits after the haze): the clouds, the haze, the city behind the track
-# (every solid not named here, the second viaduct among them), the track, and the blocks in front.
+# The depth slices, back to front (the fog sits after the haze): the haze, the city behind the track (every
+# solid not named here, the second viaduct among them), the track, and the blocks in front.
 TRACK = ("track", "beam", "pier", "train")
 FRONT = ("A", "sun", "fans", "L0", "dish", "Dd", "Bc", "Rf")
 
 
+SLICES = 4
+
+
 def slice_of(name):
-    if name.startswith("cloud"):
-        return 0
     if name.startswith("haze"):
-        return 1
+        return 0
     if name.startswith(("track2", "pier2", "road")):       # the second viaduct runs among the towers behind
-        return 2
+        return 1
     if name.startswith(TRACK):
-        return 3
+        return 2
     if name in FRONT or name == "dishitself" or name.startswith(("Bc", "Rf", "Dd")):
-        return 4
-    return 2
+        return 3
+    return 1
 
 
 def layered(solids):
@@ -1004,8 +1000,8 @@ def layered(solids):
     order()'s, and no solid in a later slice is behind one in an earlier slice where they overlap."""
     hull = {id(s): shapely.union_all([reach(dict(kind="node", item=it)) if it.kind == "node" else screen_poly(it.pts)
                                       for it in s.items]) for s in solids}
-    by = [[s for s in solids if slice_of(s.name) == k] for k in range(5)]
-    for k in range(5):
+    by = [[s for s in solids if slice_of(s.name) == k] for k in range(SLICES)]
+    for k in range(SLICES):
         for later in by[k]:
             for j in range(k):
                 for earlier in by[j]:
@@ -1013,9 +1009,9 @@ def layered(solids):
                             not behind(earlier.box, later.box):
                         raise AssertionError(f"{later.name} is behind {earlier.name} but in a nearer slice")
     out = []
-    for k in range(5):
+    for k in range(SLICES):
         out += by[k]
-        if k == 1:
+        if k == 0:
             out.append(fog())
     return out
 
@@ -1182,7 +1178,7 @@ def compose():
     dropped = 0.0
     for s, it in reversed(flat):
         if it.kind == "fogband":
-            far = shapely.union_all([screen_poly(i.pts) for b in solids if slice_of(b.name) <= 1 for i in b.items
+            far = shapely.union_all([screen_poly(i.pts) for b in solids if slice_of(b.name) == 0 for i in b.items
                                      if i.kind == "fill"])
             pts, seen = fog_sheet(far, cover)
             FOG_SEEN.append(seen)

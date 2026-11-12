@@ -50,7 +50,7 @@ const opxy::i32 car_speed[cars] = {14, 11, 12, 16};
 const opxy::i32 car_phase[cars] = {40, 170, 90, 220};
 // The still artwork's fill below the header and the header's own, px^2: the device fills
 // these every frame.
-const opxy::i32 static_fill = 83937, header_fill = 27840;
+const opxy::i32 static_fill = 80935, header_fill = 27840;
 // The palette: ten greys, then white fog donors at rising opacity (32nds). A grey's slot: the
 // nearest of the ten, the darker of two.
 const unsigned char slot[16] = {0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 9};
