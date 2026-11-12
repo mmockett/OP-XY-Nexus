@@ -7,8 +7,8 @@ of resonant filters. Swell makes a held note bloom like brass, bite gives it
 the CS-80's bright blip, ring modulation turns it to bells, and the CS-80's
 own chorus moves it across the stereo field.
 
-**Status: experimental.** Nexus plays on the OP-XY; its CPU figures below are
-estimates.
+**Status:** v1.0.0. Nexus plays on the OP-XY, and its CPU is measured on the
+device.
 
 ## The sound
 
@@ -170,23 +170,21 @@ city follows the Shift controls whether or not Shift is held.
 
 ## CPU
 
-Estimated, not measured: counted from the Blackfin instructions in the
-compiled sound loops, at 1.3 to 1.5 cycles an instruction, plus about 1.5% of
-the block for the OP-XY's own share of a voice. Only a measurement on the
-OP-XY gives a real figure.
+Measured on an OP-XY (OS 1.2.1) at v1.0.0 with the SDK's synth sweep, which
+turns each page control through its positions with the rest at their
+defaults. Per voice, as a share of the OP-XY's audio block:
 
-| Setting | Instructions a sample | Per voice, % of the block |
-| --- | --- | --- |
-| Tyrell with chorus 0 and spread 0 (mono) | 88 | 3.1 to 3.3 |
-| Tyrell | 132 | 3.9 to 4.1 |
-| Tyrell with lowcut on | 160 | 4.3 to 4.7 |
-| Sine alone (Toy Bells) | 66 | 2.7 to 2.8 |
-| Saw and pulse, lowcut, sine up to 50, chorus | 239 | 5.8 to 6.3 |
-| Heaviest: that with sine past 50, ring and balance off centre | 273 | 6.4 to 7.0 |
+| Setting | Per voice, % of the block |
+| --- | --- |
+| Defaults (Tyrell) | 3.2 |
+| Every page control at its heaviest | 3.2 |
+| Shape between saw and square (heaviest) | 4.3 |
+| Worst single block | 4.5 |
 
 Swell, bite, the release and the pulse's movement cost nothing a sample.
 Lowcut, sine, noise, ring, spread and drift cost nothing at 0, nor balance at
-50; sine at 100 skips both filters and the saw.
+50; sine at 100 skips both filters and the saw. The Shift row stays at its
+defaults in the sweep, so settings that turn several of them up cost more.
 
 ## Building
 
