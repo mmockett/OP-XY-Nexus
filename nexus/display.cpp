@@ -47,7 +47,7 @@ const u32 fps_text = 16;
 
 const u32 budget = 200;                 // points of outlines changed a frame, at most
 const u32 most_nodes = 30;              // and nodes: many changed at once slow the device too
-const u32 most_busy = 10;               // and restyled nodes while notes sound or the glow fades: the glow's recolours
+const u32 most_busy = 10;               // and restyled nodes while anything moves or glows: the glow's recolours
 const i32 slow = 20, fast = 90;         // the train's speed at chorus 0 and 100, px a second along x
 const i32 gap = 90;                     // px of its run the train spends out of sight before it comes round
 const i32 rise = 30;                    // how high the craft hovers at bite 100, px (make_panel.py's CRAFT_RISE)
@@ -528,11 +528,11 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
         ++count;
     }
     spent += reshape(state, frame, c, count);
-    // While notes sound or the glow fades, the restyling (the glow's windows, mostly) takes at most most_busy
-    // nodes a frame: the device pays for each changed node, on top of what moves.
+    // While anything moves or glows, the restyling (the glow's windows, mostly) takes at most most_busy nodes
+    // a frame: the device pays for each changed node, on top of what moves.
     const u32 room = count < most_nodes ? most_nodes - count : 0;
-    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, held || state.stage ? smallest(room, most_busy) : room,
-            spent);
+    const bool busy = held || state.stage || state.speed || state.pace;
+    restyle(state, frame, c, held, spent < budget ? budget - spent : 0, busy ? smallest(room, most_busy) : room, spent);
     state.fresh = 0;
     readout(state, input, frame);
 
