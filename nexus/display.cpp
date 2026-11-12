@@ -167,9 +167,15 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
         if (p != pattern_of(c.shape)) return parked();
         return home(k, smallest(15u, between(low, high, c.reso) + pulse(s, c, held)), fill_and_stroke);
     case city::sand: {
-        // in half pixels, the top half up and the bottom half down
+        // in half pixels, the top half up and the bottom half down: its dots, and the panel's grey over the
+        // gaps between them (a grey range), which follows the panel's grey
         const i32 d = static_cast<i32>((c.detune * static_cast<u32>(drift) * 2u) >> 16) * (unit / 2);
-        return pose(city::home_x[k] * unit, city::home_y[k] * unit + (p ? d : -d), unit, 0, keep);
+        Node n = pose(city::home_x[k] * unit, city::home_y[k] * unit + (p ? d : -d), unit, 0, keep);
+        if (high) {
+            n.shade = city::slot[between(low, high, c.reso)];
+            n.paint = fill_and_stroke;
+        }
+        return n;
     }
     case city::ring: {
         // param: its ring (bit 0), and whether it is an outline (bit 1, the dish's) or a filled ribbon

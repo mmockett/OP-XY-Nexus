@@ -58,7 +58,16 @@ CRAFT_RISE = 30                   # px the craft rises at bite 100 (display.cpp'
 # The road's cars: lane (world x), way (1 up the road to the right, -1 down it toward the viewer), speed
 # px a second along screen x, where it is drawn (world y), and where it is on its run at rest (px).
 ROAD_CARS = [(218.9, 1, 14, -150, 40), (223.15, 1, 11, -150, 170), (227.4, -1, 12, -150, 90), (230.9, -1, 16, -150, 220)]
-SAND = 2                          # the hourglass's dots: dark against its panel (12..15) at every reso
+SAND = 1                          # the hourglass's dots: near black against its panel (12..15) at every reso
+# The hourglass's dot matrix, in its face's units (1 px across): SAND_COLS columns of dots SAND_DOT square,
+# SAND_PITCH apart, from SAND_U0 across and SAND_W0 down; the panel's grey covers the SAND_GAP between them.
+# Each half of the sand is whole dots: (row, dots across, centred) from the top half's widest row down to
+# the bottom half's. SAND_PITCH is SAND_DRIFT, so at detune 100 each half has slid exactly one row.
+SAND_COLS, SAND_DOT, SAND_PITCH = 5, 3, 5
+SAND_GAP = SAND_PITCH - SAND_DOT
+SAND_U0, SAND_W0, SAND_SPINE = 8, 16, 0.6
+SAND_ROWS = ([(0, 5), (1, 5), (2, 3), (3, 3), (4, 1)],
+             [(6, 1), (7, 3), (8, 3), (9, 5), (10, 5)])
 SUN_STRIPES = 4                   # the sun poster's reflection, in stripes that lowcut clears from the bottom up
 SAND_DRIFT = 5                    # px each half of the hourglass moves at detune 100 (display.cpp's drift)
 OCCLUDE = 100                     # px^2: a static outline this big hides what is behind it
@@ -441,6 +450,40 @@ def comb_down(f, u, w, du, dw, n, pitch, spine=0.6):
     return pts
 
 
+def sand_span(dots):
+    """Where a row of the hourglass's dots, centred, runs across its face: (first dot's left, last dot's right)."""
+    first = (SAND_COLS - dots) // 2
+    return SAND_U0 + first * SAND_PITCH, SAND_U0 + (first + dots - 1) * SAND_PITCH + SAND_DOT
+
+
+def sand_gap_u(k):
+    """Where the gap after the hourglass's column k starts across its face."""
+    return SAND_U0 + k * SAND_PITCH + SAND_DOT
+
+
+def sand_half(f, rows):
+    """A half of the hourglass's sand: (row, dots) from its top row down, as one staircase outline of whole
+    dots. Each row meets the next in the middle of the gap between them, under the bar laid over that gap,
+    so no edge of the sand lies along one of a bar (two soft edges together leave a faint seam)."""
+    left, right = [], []
+    for k, (r, c) in enumerate(rows):
+        a_, b_ = sand_span(c)
+        w0 = SAND_W0 + r * SAND_PITCH - (SAND_GAP / 2 if k else 0)
+        w1 = SAND_W0 + r * SAND_PITCH + (SAND_DOT if k == len(rows) - 1 else SAND_DOT + SAND_GAP / 2)
+        left += [(a_, w0), (a_, w1)]
+        right += [(b_, w0), (b_, w1)]
+    pts = right + left[::-1]
+    out = []
+    for p in pts:                     # (straight runs: drop the middle points)
+        if len(out) >= 2 and (out[-2][0] == out[-1][0] == p[0] or out[-2][1] == out[-1][1] == p[1]):
+            out[-1] = p
+        elif not out or out[-1] != p:
+            out.append(p)
+    while len(out) >= 3 and (out[-1][0] == out[0][0] == out[1][0] or out[-1][1] == out[0][1] == out[1][1]):
+        out.pop(0)
+    return [f(u, w) for u, w in out]
+
+
 class City:
     """The scene's builder: solids, and the nodes on them."""
 
@@ -772,24 +815,38 @@ def city():
     C.box_on("hg1", hg, 22, 6, 8, 7, 4)
     s.fill(quad(hg.L, 3, 7, 34, 78), 4, occ=True)                       # the billboard's frame
     s.node(quad(hg.L, 4.25, 8.25, 31.5, 75.5), kind="panel", low=12, high=15, tone=14, occ=True)
-    s.node([hg.L(9, 17), hg.L(32, 17), hg.L(20.5, 45)], kind="sand", param=0, tone=SAND, keep=True,
-           sweep=[(0, 0), (0, -SAND_DRIFT)])
-    s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=SAND, keep=True,
-           sweep=[(0, 0), (0, SAND_DRIFT)])
-    # the dot matrix: the panel's grey laid over the gaps between dots, rows and columns
-    # (each bar only as long as the sand can reach under it, as detune drifts it: over the bare panel the
-    # bars would be the panel's grey on the panel's grey, fill for nothing)
-    def reach(w0, top):
-        """How far right the sand can be in the row from w0 (face units): the top half's right edge at the
-        row's top (it drifts up), the bottom half's at the row's foot (it drifts down)."""
-        if top:
-            return 32 - 11.5 * (max(17, w0) - 17) / 28
-        return 20.5 + 11.5 * (min(75, w0 + 1.25) - 47) / 28
-    for w0, top in ((10.75, True), (46.75, False)):
-        lengths = [min(28, reach(w0 + 3 * k, top) + 0.75 - 5.5) for k in range(12)]
-        s.node(column(hg.L, 5.5, w0, lengths, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
-    s.node(comb_down(hg.L, 7.75, 8.75, 1.25, [2] + [75] * 8, 9, 3, spine=0.6), kind="panel", low=12, high=15,
-           tone=14)                       # (the first bar, left of where the sand ever reaches, a stub)
+    # the dot matrix: SAND_COLS columns of square dots, SAND_PITCH apart, on the panel. Each half of the sand
+    # is one outline of whole dots, row by row (sand_half()), with the panel's grey laid over the gaps between
+    # its rows and columns (two more outlines, each only as long as the sand under it), so it shows as dots.
+    # The three move together, so as detune drifts a half its dots stay whole; their grey follows the panel's.
+    for p_, rows in enumerate(SAND_ROWS):
+        up = p_ == 0                      # the top half drifts up, the bottom half down
+        sweep = [(0, 0), (0, -SAND_DRIFT if up else SAND_DRIFT)]
+        s.node(sand_half(hg.L, rows), kind="sand", param=p_, tone=SAND, keep=True, sweep=sweep)
+        # the gaps between its rows: each as far across as the wider of the rows either side of it, and a
+        # little past, so its end lies on the bare panel
+        gaps = list(zip(rows, rows[1:]))
+        u0 = SAND_U0 - 1 - SAND_SPINE       # the dashes' spine: left of the dots, on the bare panel
+        s.node(column(hg.L, u0, SAND_W0 + gaps[0][0][0] * SAND_PITCH + SAND_DOT,
+                      [sand_span(max(a_[1], b_[1]))[1] + 0.5 - u0 for a_, b_ in gaps], SAND_GAP, len(gaps), SAND_PITCH,
+                      spine=SAND_SPINE), kind="sand", param=p_, low=12, high=15, tone=14, sweep=sweep)
+        # the gaps between its columns: down from a spine over the top half, up from one under the bottom half,
+        # each as far as the rows whose dots it parts, and on into the bar over the next gap between rows
+        def parts(k):
+            return [r for r, c in rows if sand_span(c)[0] < sand_gap_u(k) and sand_gap_u(k) + SAND_GAP < sand_span(c)[1]]
+        if up:
+            top = SAND_W0 + rows[0][0] * SAND_PITCH - 1
+            ends = [SAND_W0 + max(parts(k)) * SAND_PITCH + SAND_DOT + SAND_GAP / 2 if parts(k) else top + 1
+                    for k in range(SAND_COLS - 1)]
+            s.node(comb_down(hg.L, sand_gap_u(0), top, SAND_GAP, [e - top for e in ends], SAND_COLS - 1, SAND_PITCH,
+                             spine=SAND_SPINE), kind="sand", param=p_, low=12, high=15, tone=14, sweep=sweep)
+        else:
+            foot = SAND_W0 + rows[-1][0] * SAND_PITCH + SAND_DOT + 1
+            ends = [SAND_W0 + min(parts(k)) * SAND_PITCH - SAND_GAP / 2 if parts(k) else foot - 1
+                    for k in range(SAND_COLS - 1)]
+            flip = lambda u, w: hg.L(u, -w)
+            s.node(comb_down(flip, sand_gap_u(0), -foot, SAND_GAP, [foot - e for e in ends], SAND_COLS - 1,
+                             SAND_PITCH, spine=SAND_SPINE), kind="sand", param=p_, low=12, high=15, tone=14, sweep=sweep)
     g(s, hg.R, 4, 8, 2, 4, 7, 12, 2, 13, 700)
     s.node([hg.L(39.3, 3), hg.L(40, 3), hg.L(40, 96), hg.L(39.3, 96)], kind="neon", low=5, high=15, tone=12)
     # far right: a tall tower with a grid of windows
@@ -1962,6 +2019,8 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None,
         elif kind == "sand":
             dd = ((c["detune"] * SAND_DRIFT * 2) >> 16) / 2
             y += dd if p else -dd
+            if hi:                    # the panel's grey over the gaps between the dots: it follows the panel
+                shade = between(lo, hi, c["reso"])
         elif kind == "fog":
             if not c["bright"]:
                 continue
