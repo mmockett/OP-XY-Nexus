@@ -118,21 +118,27 @@ ring (Glass Choir).
 
 ## The screen
 
-An isometric night city: dark towers with light edges, lit windows, neon
-strips and masts. While a note is held, a white flying car crosses it with
-its wingman; at the edge of the screen the city turns the page and the car
-flies on over the next stretch, which never repeats.
+A dense isometric city in greys, drawn like pixel art: an elevated monorail
+crossing it on a long diagonal, a second viaduct below, the OP-XY advert tower,
+a sun billboard and a dot-matrix hourglass, a helipad, masts with lights, a
+dish, a ball tower, rooftop fans, plant rooms and rows of windows, with pale
+towers in the haze behind. Tops are light, sides mid and dark.
+
+At rest the city is still. While a note is held, a two-car train runs along
+the monorail, passing behind the nearer towers and coming round again; the
+fans turn, the dish swings, the craft over the helipad bobs and the lights
+blink. When the note ends, everything eases to a stop where it is.
 
 | Control | What it changes |
 | --- | --- |
-| shape | The skyline: rolling for sine, ramps for saw, blocks for square, spikes for pulse |
-| detune | The wingman (layer II) drifts off the leader's line |
-| bright | How many windows are lit |
-| reso | The neon strips brighten |
-| chorus | The two cars weave apart and back |
-| ring | Rings on the masts, faint to bright, one then two |
-| touch | Dark windows flare one by one while a note is held |
-| ribbon | How high the cars fly |
+| shape | The advert's pattern: circles for sine, ramps for saw, a checker for square, thin bars for pulse |
+| detune | The hourglass's two halves drift apart |
+| bright | How many windows and background lights are lit |
+| reso | The advert, the billboards and the neon edges brighten |
+| chorus | The train's speed |
+| ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two |
+| swell | Dark windows flare one by one while a note is held, and the advert's pattern pulses |
+| bite | How high the craft hovers over the helipad: at 0 it has landed |
 
 While Shift is held, the header's bright row shows the Shift controls.
 
@@ -168,7 +174,8 @@ python open-xy/sdk.py compile --machine nexus --out <new folder>   # the Blackfi
 ```
 
 `nexus/tools/make_panel.py` writes the screen's artwork and the tables
-`display.cpp` reads; `nexus/tools/make_tables.py` writes the sound's tables.
+`display.cpp` reads (it needs shapely 2.2.0); `nexus/tools/make_tables.py`
+writes the sound's tables.
 
 ## Licence
 
