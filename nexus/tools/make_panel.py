@@ -206,8 +206,14 @@ def tower(fx, fy, a, b, y1, z0=0):
     return Box(x1 - a, x1, y1 - b, y1, min(z0, z1 - 200), z1)
 
 
+JITTER = 0.0                      # a test of the output's steadiness: nudge every point this much
+
+
 class Item:
     def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None, restyle=None):
+        # Points to 1/10000 px: the platforms' sines and cosines differ in their last bits, and an
+        # outline that just touches another must touch, or not, the same way on every machine.
+        pts = [(round(x + JITTER, 4), round(y - JITTER, 4)) for x, y in pts]
         self.kind, self.pts, self.tone, self.occ, self.width, self.node = kind, pts, tone, occ, width, node
         self.restyle = restyle          # a fill drawn as nodes, a piece each, that restyle (the sky)
 
