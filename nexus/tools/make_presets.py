@@ -116,8 +116,8 @@ TABLE = [
     dict(name="Ice Tower", role="glass", was="Ice Tower",
          idea="Sines alone, the second two octaves up and ringing at 2.6, struck and fading, spread wide: "
               "glass bells",
-         controls=dict(shape=0, detune=26, bright=74, reso=18, chorus=0, ring=24, swell=0, bite=0,
-                       sine=100, octave="2ft", lowcut=0, noise=0, balance=32, ratio="2.6", spread=70, drift=15),
+         controls=dict(shape=0, detune=26, bright=74, reso=18, chorus=0, ring=20, swell=0, bite=0,
+                       sine=100, octave="2ft", lowcut=0, noise=0, balance=36, ratio="2.6", spread=55, drift=15),
          amp=(0.0, 2.6, 0.18, 4.5), sends=(65, 30)),
     dict(name="Undercity", role="bass", was="Undercity",
          idea="A saw with an octave under it, mono, a resonant filter that growls open as the note is held",
