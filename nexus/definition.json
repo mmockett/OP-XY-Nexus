@@ -496,11 +496,11 @@
     "outputPeakQ31": 1073741824,
     "stereoOutput": 1,
     "display": {
-      "stateBytes": 108,
+      "stateBytes": 124,
       "stateAlignment": 4,
       "paths": 4,
       "points": 9,
-      "nodes": 193,
+      "nodes": 278,
       "texts": 17,
       "palette": 16
     },

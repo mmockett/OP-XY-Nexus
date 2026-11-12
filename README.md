@@ -122,8 +122,15 @@ A dense isometric city in greys, drawn like pixel art: an elevated monorail
 crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
 tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
 with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
-fans, plant rooms and tall windows, two floors high, down every face, with pale
-towers in the haze behind. Tops are light, sides mid and dark.
+fans, plant rooms and windows down every face, tall ones two floors high and,
+on the helipad and the towers round its foot, small ones, with dark towers in
+the haze behind under a black sky. Tops are light, sides mid and dark.
+
+The windows light a few at a time, in a scattered order, never a column at
+once. Fog drifts through the city in four layers at different depths: a glow
+in the sky, haze over the far towers, mist under the monorail and a low layer
+over the road. Each sits over what is behind it and under what is nearer, so
+the far city pales as the fog thickens while the near city stays sharp.
 
 At rest the city is still. While a note is held, a two-car train runs along
 the monorail, passing behind the nearer towers and coming round again; tiny
@@ -135,14 +142,20 @@ everything eases to a stop where it is.
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
 | detune | The hourglass's two halves of dark dots drift apart |
-| bright | More windows and background lights are lit, and the sky dusks to a mid grey, lighter low behind the haze, so the towers keep their shape |
+| bright | Brings in the fog and lights more windows and background lights. At 0 there is no fog: a black sky over darker towers. As it rises, the fog thickens, densest in the haze over the far towers |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
 | ring | Rings on the masts, round the ball tower and in the dish, faint to bright, one then two; each passes behind its mast or the ball and in front of it |
-| swell | Dark windows flare one by one while a note is held, and the advert's pattern pulses |
+| swell | How many dark windows glow with each note, and the advert's pattern pulses while it's held. The glow follows the track's amp envelope: up over its attack, down to its sustain, out over its release, through the greys between |
 | bite | How high the flying car hovers over the helipad: at 0 it has landed |
 | sine (Shift) | The two lines under the advert's pattern, short to long |
 | lowcut (Shift) | The sun poster's reflection on the water clears stripe by stripe from the bottom up |
+
+With a note, each glowing window brightens a little after the one before:
+dark at the note's start, rising through the greys during the attack, white
+at the peak, settling to the sustain's level and fading back to dark over the
+release. When the OP-XY can't report the envelope, the windows flare one by
+one while the note is held, as before.
 
 While Shift is held, the header's bright row shows the Shift controls. Sine's
 lines and lowcut's reflection follow them whether or not Shift is held.

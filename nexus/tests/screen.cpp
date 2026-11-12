@@ -3,13 +3,15 @@
 // whole travel, the reshaping outlines (the fans' blades, the advert's lines) at every pose;
 // nothing changing at rest, Shift held or not; the train and the road's cars running their loops
 // and coming and going only where they can't be seen; the fans turning a little every frame while
-// notes are held; bright darkening the sky (keeping the haze towers lighter) and the windows running
-// down every face; sine setting the advert's lines with Shift held or
-// not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
+// notes are held; bright darkening the sky's gradient (keeping the haze towers lighter) and lighting
+// the windows, which run down every face, in a scattered order; the windows' glow following the amp
+// envelope through attack, decay, sustain and release, and stopping; sine setting the advert's lines
+// with Shift held or not; how much changes a frame, in nodes and in the points of their outlines (the device redraws
 // those, at a cost by their points), while notes are held and while controls turn; and how much
 // of the screen is filled, which the device pays for every frame.
 #include "../display.cpp"
 #include "outlines.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -24,10 +26,15 @@ using opxy::draw::unit;
 namespace city = nexus::city;
 
 // The budgets: points of changed outlines a frame, and nodes (display.cpp's; the header's eight
-// bars may change besides), and the filled area, header included, at most 1.52 times the picture
-// below the header (480 x 182 px).
+// bars may change besides), and the opaque filled area, header included, at most 1.55 times the picture
+// below the header (480 x 182 px); the fog at most half of it, and 2.1 times with the fog counted twice.
 const u32 most_points = nexus::screen::budget;
-const double most_fill = 1.52 * 480 * 182;
+const double most_fill = 1.55 * 480 * 182;
+const double most_weighted_fill = 2.1 * 480 * 182;     // and with the fog counted twice
+
+// The track's amp envelope the display is given: unknown unless a check sets it.
+opxy::draw::Envelope amp = {opxy::draw::envelope_unavailable, opxy::draw::envelope_unavailable,
+                            opxy::draw::envelope_unavailable, opxy::draw::envelope_unavailable};
 
 nexus::DisplayState state;
 nexus::Frame frame, before;
@@ -42,9 +49,11 @@ opxy::draw::Input input_of(const i32 (&slots)[8], u32 held, u32 serial) {
     in.note_serial = serial;
     in.held_notes = held;
     in.note_off_serial = serial;
-    in.amp.attack = in.amp.decay = in.amp.sustain = in.amp.release = opxy::draw::envelope_unavailable;
+    in.amp = amp;
     return in;
 }
+
+i32 glow_floor_of() { return nexus::screen::glow_floor; }
 
 bool hidden(const opxy::draw::Node& node) {
     return node.x == opxy::draw::hidden_x * unit && node.y == opxy::draw::hidden_y * unit;
@@ -70,14 +79,17 @@ Change changed() {
 u32 anything(const Change& c) { return c.nodes + c.texts; }
 
 // The filled area this frame, px^2: the still artwork's and the header's (make_panel.py measures
-// them), and each filled node shown, at its scale (a node partly off screen counted whole).
+// them), and each opaque filled node shown, at its scale (a node partly off screen counted whole); and the
+// fog's, translucent, which the device blends at about twice the cost of an opaque fill.
+double fog_area = 0;
 double filled() {
     double area = nexus::city::static_fill + nexus::city::header_fill;
+    fog_area = 0;
     for (u32 k = city::first; k < nexus::Frame::node_count; ++k) {
         const opxy::draw::Node& node = frame.nodes[k];
         if (hidden(node) || !outlines[k].filled) continue;
         const double s = node.scale / 1024.0;
-        area += outlines[k].area / 16.0 * s * s;
+        (outlines[k].filled == 2 ? fog_area : area) += outlines[k].area / 16.0 * s * s;
     }
     return area;
 }
@@ -129,13 +141,15 @@ void check_outlines() {
     }
 }
 
-double most_filled = 0;
+double most_filled = 0, most_fog = 0, most_weighted = 0;
 Change step(const i32 (&slots)[8], u32 held, u32 serial) {
     std::memcpy(&before, &frame, sizeof frame);
     const opxy::draw::Input in = input_of(slots, held, serial);
     nexus::display(state, in, frame);
     const double f = filled();
     if (f > most_filled) most_filled = f;
+    if (fog_area > most_fog) most_fog = fog_area;
+    if (f + 2 * fog_area > most_weighted) most_weighted = f + 2 * fog_area;
     return changed();
 }
 
@@ -375,10 +389,12 @@ int main() {
         {0, .22, 1, .28, 1, 1, .8, .6},      // night, the craft up and bobbing, every ring
         {.5, .5, .5, .5, .5, .5, .5, .5},
     };
+    // Each setting twice: the envelope unknown (the windows flare), then known, Tyrell's (they glow with it).
     u32 flight_points = 0, flight_nodes = 0;
-    for (int k = 0; k < 6; ++k) {
+    for (int k = 0; k < 12; ++k) {
+        if (k == 6) { amp.attack = 12416 << 16; amp.decay = 32640 << 16; amp.sustain = 29490 << 16; amp.release = 21632 << 16; }
         i32 s[8];
-        slots_of(settings[k], s);
+        slots_of(settings[k % 6], s);
         for (int f = 0; f < 150; ++f) step(s, 0, 20 + k);
         u32 points = 0, most = 0, nodes = 0, most_nodes = 0;
         train_appeared = 0;
@@ -396,8 +412,9 @@ int main() {
             if (c.nodes > most_nodes) most_nodes = c.nodes;
             expect(opxy::draw::valid(frame), "a frame in flight is invalid");
         }
-        std::printf("setting %d: %.1f points (%.1f nodes) changed a frame on average, at most %u points "
-                    "(%u nodes); the train came round %u times\n", k, points / double(length), nodes / double(length),
+        std::printf("setting %d%s: %.1f points (%.1f nodes) changed a frame on average, at most %u points "
+                    "(%u nodes); the train came round %u times\n", k % 6, k < 6 ? "" : " (the envelope known)",
+                    points / double(length), nodes / double(length),
                     static_cast<unsigned>(most), static_cast<unsigned>(most_nodes), static_cast<unsigned>(train_appeared));
         expect(most <= most_points, "a frame in flight changes more points than the budget");
         expect(most_nodes <= nexus::screen::most_nodes + 8, "a frame in flight changes more nodes than the budget");
@@ -405,6 +422,7 @@ int main() {
         if (most > flight_points) flight_points = most;
         if (most_nodes > flight_nodes) flight_nodes = most_nodes;
     }
+    amp.attack = amp.decay = amp.sustain = amp.release = opxy::draw::envelope_unavailable;
     std::printf("in flight: at most %u points and %u nodes changed a frame (the header's bars included)\n",
                 static_cast<unsigned>(flight_points), static_cast<unsigned>(flight_nodes));
 
@@ -468,51 +486,47 @@ int main() {
         expect(changed().points <= most_points, "a reduced-motion frame changes more points than the budget");
     }
 
-    // Bright darkens the sky by its square, from grey 12 at 0 to a mid grey at 100 above the horizon and a
-    // lighter one below it, the city's glow behind the haze towers; the clouds darken with it, a grey
-    // lighter than the sky above the horizon. Never brightening as it rises, never near black: the haze
-    // towers (still greys 10..12) stay lighter than the sky behind them, and the dark faces (2..4) darker.
+    // Bright brings in the fog: none at 0 (a black sky over darker towers); as bright rises each fog node's
+    // donor, white at its opacity (city.h's fog_alpha, 32nds), never thins; at 100 the haze over the far
+    // towers is the densest, and each nearer layer no denser than the one behind it (the sky's glow, behind
+    // the haze towers, is the faint exception).
     {
         i32 s[8];
         slots_of(tyrell, s);
-        u32 skies = 0, clouds = 0, last[nexus::Frame::node_count];
+        u32 fogs = 0, last[nexus::Frame::node_count];
         for (u32 k = city::first; k < city::restyle_end; ++k) {
-            if (city::kind[k] == city::sky) ++(city::low[k] == 12 ? skies : clouds);
-            last[k] = 99;
+            if (city::kind[k] == city::fog) ++fogs;
+            last[k] = 0;
         }
-        expect(skies && clouds, "no sky or no clouds");
-        u32 night = 0, glow = 0, cloud = 0;
+        std::printf("the fog: %u nodes in 4 layers\n", static_cast<unsigned>(fogs));
+        expect(fogs >= 8, "no fog");
         for (int v = 0; v < 128; ++v) {
             s[2] = v == 127 ? 0x7fffffff : v << 24;
             expect(still(s, 1000), "the screen changes at rest while bright is set");
-            expect(settled(s), "the sky hasn't settled");
-            u32 darkest = 99, lightest = 0, darkest_cloud = 99;
+            expect(settled(s), "the fog hasn't settled");
+            u32 layer[4] = {0, 0, 0, 0};
             for (u32 k = city::first; k < city::restyle_end; ++k) {
-                if (city::kind[k] != city::sky) continue;
-                const u32 shade = frame.nodes[k].shade;
-                expect(shade <= last[k], "the sky brightens as bright rises");
-                last[k] = shade;
-                if (v == 0) expect(shade == city::low[k], "the sky at bright 0 isn't its day grey");
-                expect(shade >= 5, "the sky goes too dark");
-                if (city::low[k] != 12) {
-                    if (shade < darkest_cloud) darkest_cloud = shade;
-                } else {
-                    if (shade < darkest) darkest = shade;
-                    if (shade > lightest) lightest = shade;
+                if (city::kind[k] != city::fog) continue;
+                const opxy::draw::Node& n = frame.nodes[k];
+                if (v == 0) {
+                    expect(hidden(n), "the fog shows at bright 0");
+                    continue;
                 }
+                const bool donor = n.shade >= city::fog_donor && n.shade < city::fog_donor + city::fog_donors;
+                expect(!hidden(n) && donor && n.paint == opxy::draw::fill_and_stroke, "the fog isn't painted from its donors");
+                if (!donor) continue;
+                const u32 alpha = city::fog_alpha[n.shade - city::fog_donor];
+                expect(alpha >= last[k], "the fog thins as bright rises");
+                last[k] = alpha;
+                if (alpha > layer[city::param[k] & 3]) layer[city::param[k] & 3] = alpha;
             }
-            expect(darkest_cloud > darkest, "the clouds merge into the sky");
-            if (v == 127) {
-                night = darkest;
-                glow = lightest;
-                cloud = darkest_cloud;
-            }
+            if (v == 32 || v == 64 || v == 96 || v == 127)
+                std::printf("bright %d: the fog's layers at %u, %u, %u and %u 32nds\n", v == 127 ? 100 : (v * 100 + 64) / 127,
+                            static_cast<unsigned>(layer[0]), static_cast<unsigned>(layer[1]), static_cast<unsigned>(layer[2]),
+                            static_cast<unsigned>(layer[3]));
+            if (v) expect(layer[1] >= layer[2] && layer[2] >= layer[3] && layer[1] >= layer[0],
+                          "a nearer fog layer is denser than a farther one");
         }
-        // at night the sky sits between the dark faces (2..4) and the haze towers' darkest (10), and is
-        // lighter low behind the haze
-        expect(night >= 5 && glow > night && glow < 10, "the sky at night merges with the city");
-        std::printf("bright 0 to 100: the sky from grey 12 to %u above the horizon and %u below it; the clouds to %u\n",
-                    static_cast<unsigned>(night), static_cast<unsigned>(glow), static_cast<unsigned>(cloud));
         // Bright jumped from 0 to 100 at rest: the windows, background lights and sky restyle over a few
         // frames, each within the budgets, and settle within a second.
         slots_of(tyrell, s);
@@ -535,12 +549,119 @@ int main() {
         expect(still(s, 1001), "the screen changes at rest");
     }
 
-    // The windows, two floors high, run down every face as far as it is seen (make_panel.py measures
-    // it): they cover each column of windows' seen height.
-    std::printf("windows: %u shown, covering %.1f%% of each column's seen height\n",
-                static_cast<unsigned>(city::windows_shown), city::window_cover / 10.0);
-    expect(city::window_cover >= 990, "the windows stop short of where their faces are seen");
-    expect(city::windows_shown >= 190, "too few windows show");
+    // The windows run down every face as far as it is seen (make_panel.py measures it), and light a few at a
+    // time: each node is a short segment of a column, at most 48 px tall, lit by its own rank (param), so
+    // bright lights them in a scattered order, not a column at a time: few segments next to each other in
+    // a column have ranks within 8 of each other.
+    {
+        u32 windows = 0, close = 0;
+        i32 tallest = 0;
+        for (u32 k = city::first; k < city::restyle_end; ++k) {
+            if (city::kind[k] != city::window) continue;
+            ++windows;
+            const i32 tall = outlines[k].bottom - outlines[k].top;
+            if (tall > tallest) tallest = tall;
+            if (k + 1 < city::restyle_end && city::kind[k + 1] == city::window) {
+                const i32 d = static_cast<i32>(city::param[k]) - static_cast<i32>(city::param[k + 1]);
+                if (d < 8 && d > -8) ++close;
+            }
+        }
+        std::printf("windows: %u shown, covering %.1f%% of each column's seen height, in %u nodes at most %.1f px "
+                    "tall; %u next to each other light together\n", static_cast<unsigned>(city::windows_shown),
+                    city::window_cover / 10.0, static_cast<unsigned>(windows), tallest / 1024.0,
+                    static_cast<unsigned>(close));
+        expect(city::window_cover >= 990, "the windows stop short of where their faces are seen");
+        expect(city::windows_shown >= 250, "too few windows show");
+        expect(tallest <= 48 * 1024, "a window node lights more than a few windows at once");
+        expect(close * 10 <= windows, "the windows light a column at a time");
+    }
+
+    // The windows' glow follows the track's amp envelope: up over its attack, down toward its sustain over
+    // its decay while the note is held, out over its release, each glowing window stepping through the
+    // greys between; every frame within the budgets; once out, nothing changes. At Tyrell's, Afterglow's,
+    // Blip Brass's and Toy Bells' envelopes (their presets' words), at bright 0 and swell 100.
+    {
+        struct Words { const char* name; i32 attack, decay, sustain, release; };
+        const Words envelopes[4] = {{"Tyrell", 12416, 32640, 29490, 21632}, {"Afterglow", 18304, 32128, 29490, 8320},
+                                    {"Blip Brass", 640, 29824, 27852, 30848}, {"Toy Bells", 128, 13184, 0, 22144}};
+        const double frame_s = 33 / 1024.0;
+        i32 s[8];
+        slots_of(tyrell, s);
+        s[2] = 0;
+        s[6] = 0x7fffffff;
+        for (int e = 0; e < 4; ++e) {
+            const Words& w = envelopes[e];
+            amp.attack = w.attack << 16;
+            amp.decay = w.decay << 16;
+            amp.sustain = w.sustain << 16;
+            amp.release = w.release << 16;
+            expect(still(s, 1300 + e), "the screen changes at rest with the envelope known");
+            const u32 ai = static_cast<u32>(amp.attack) >> 24, di = static_cast<u32>(amp.decay) >> 24,
+                      ri = static_cast<u32>(amp.release) >> 24;
+            const double attack_s = 65536.0 / city::attack_rate[ai];
+            const double tau_d = 65536.0 / city::fall_rate[di ? di : 1], tau_r = 65536.0 / city::fall_rate[127 - ri];
+            const double sustain = (amp.sustain >> 15) / 65536.0;
+            const int held = 150;
+            int peak = -1, out = -1;
+            i32 last = 0, at_release = 0;
+            u32 was = 0;
+            u32 most = 0, most_count = 0, glowing = 0;
+            u32 seen[nexus::Frame::node_count];
+            for (u32 k = 0; k < nexus::Frame::node_count; ++k) seen[k] = 0;
+            for (int f = 0; f < held + 400; ++f) {
+                const Change c = step(s, f < held ? 1u : 0u, 1400 + e);
+                check_outlines();
+                if (c.points > most) most = c.points;
+                if (c.nodes > most_count) most_count = c.nodes;
+                const i32 level = state.glow;
+                if (f < held) {
+                    if (state.stage == 1) expect(level >= last, "the glow falls during the attack");
+                    if (state.stage == 2 && peak < 0) peak = f + 1;
+                    if (state.stage == 2 && was == 2) expect(level <= last && level >= (amp.sustain >> 15),
+                                                             "the glow doesn't decay toward the sustain");
+                    at_release = level;
+                } else {
+                    expect(level <= last, "the glow rises after release");
+                    if (level == 0 && out < 0) out = f - held + 1;
+                }
+                last = level;
+                was = state.stage;
+                u32 now = 0;
+                for (u32 k = city::first; k < city::restyle_end; ++k) {
+                    if (city::kind[k] != city::window) continue;
+                    if (frame.nodes[k].shade != city::slot[city::low[k]]) ++now;
+                    if (peak < 0 || f >= held) seen[k] |= 1u << frame.nodes[k].shade;   // through the attack and release
+                }
+                if (now > glowing) glowing = now;
+            }
+            u32 windows = 0, greys = 0;
+            for (u32 k = city::first; k < city::restyle_end; ++k) {
+                if (city::kind[k] != city::window || seen[k] == (1u << city::slot[city::low[k]])) continue;
+                ++windows;
+                for (u32 g = seen[k]; g; g &= g - 1) ++greys;
+            }
+            const double expected_out = at_release > glow_floor_of() ? tau_r * std::log(at_release / 1024.0) : 0;
+            const double expected_level = sustain + (1 - sustain) * std::exp(-(held - peak) * frame_s / tau_d);
+            std::printf("%s's envelope: at its peak in %.0f ms (attack %.0f ms); %.2f at the release (%.2f by its "
+                        "decay); out in %.0f ms (%.0f ms by its release); %u windows glowed, through %.1f greys each; "
+                        "at most %u points and %u nodes a frame\n", w.name, peak * frame_s * 1000, attack_s * 1000,
+                        at_release / 65536.0, expected_level, out * frame_s * 1000, expected_out * 1000,
+                        static_cast<unsigned>(glowing), windows ? greys / double(windows) : 0.0,
+                        static_cast<unsigned>(most), static_cast<unsigned>(most_count));
+            expect(peak > 0 && std::fabs(peak * frame_s - attack_s) <= frame_s + 0.05 * attack_s,
+                   "the glow doesn't peak at the end of the attack");
+            expect(std::fabs(at_release / 65536.0 - expected_level) <= 0.03, "the glow doesn't follow the decay");
+            expect(out >= 0 && std::fabs(out * frame_s - expected_out) <= 2 * frame_s + 0.15 * expected_out,
+                   "the glow doesn't go out over the release");
+            expect(glowing >= 16 && glowing <= 48, "too few or too many windows glow");
+            if (attack_s >= 0.2) expect(windows && greys >= 3 * windows, "the glow doesn't step through the greys");
+            expect(most <= most_points, "the glow changes more points in a frame than the budget");
+            expect(most_count <= nexus::screen::most_nodes + 8, "the glow changes more nodes in a frame than the budget");
+            expect(still(s, 1400 + e), "the screen changes after the glow goes out");
+        }
+        amp.attack = amp.decay = amp.sustain = amp.release = opxy::draw::envelope_unavailable;
+        expect(still(slots, 1450), "the screen changes at rest once the envelope is unknown again");
+    }
 
     // Sine sets the advert's lines, Shift held or not: longer as it rises, and still at rest.
     for (int held = 0; held < 2; ++held) {
@@ -599,8 +720,12 @@ int main() {
 
     // Released, everything eases to a stop and then nothing changes.
     expect(still(slots, 500), "the screen changes after the train stops");
-    std::printf("filled at most %.0f px^2, %.2f of the picture (header included)\n", most_filled, most_filled / (480.0 * 182));
+    std::printf("filled at most %.0f px^2, %.2f of the picture (header included); fog at most %.2f of it, %.2f "
+                "with the fog counted twice (blended)\n", most_filled, most_filled / (480.0 * 182), most_fog / (480.0 * 182),
+                most_weighted / (480.0 * 182));
     expect(most_filled <= most_fill, "more of the screen is filled than the budget");
+    expect(most_fog <= 0.5 * 480 * 182, "more fog than half the picture");
+    expect(most_weighted <= most_weighted_fill, "the fill and the blended fog together are over the budget");
     if (!failures) std::puts("ok");
     return failures ? 1 : 0;
 }

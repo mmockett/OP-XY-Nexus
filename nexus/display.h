@@ -19,6 +19,10 @@ struct DisplayState {
     opxy::i32 clock;          // Q10 seconds run: the lights, fans, dish, craft and the pattern's pulse
     opxy::i32 hold;           // Q10 seconds since the latest note started, while held
     opxy::u32 serial;         // that note's serial: which windows flare
+    opxy::u32 envelope;       // 1 while the track's amp envelope is known: the windows glow with it
+    opxy::i32 glow;           // the windows' glow, Q16, through the envelope
+    opxy::u32 stage;          // its stage: 0 out, 1 attack, 2 decay and sustain, 3 release
+    opxy::u32 glow_serial;    // the note that started it: which windows glow
     opxy::u32 frames, acc, worst, fps, worst_shown;   // the frame-rate readout (display.cpp's show_fps)
     opxy::i32 pace;           // the fans' and the road cars' pace, Q10: 1 while notes are held, easing to 0
     opxy::u32 spin;           // the fans' turn, Q16

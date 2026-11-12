@@ -11,14 +11,16 @@
 // What the controls do to it:
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
 //   detune  the hourglass's two halves of dark dots drift apart
-//   bright  more windows and background lights are lit, and the sky dusks: to a mid grey above the horizon
-//           and a lighter one below it, behind the haze towers, which keep their light greys; the
-//           clouds a grey lighter than the sky
+//   bright  more windows and background lights are lit, in a scattered order, and white fog comes in: three
+//           translucent layers at different depths, each drawn over what is behind it and under what is
+//           nearer, thicker the farther it is; at 0 there is none, a black sky over darker towers
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
 //   ring    rings on the masts, round the ball and in the dish, faint to bright, one then two; each passes
 //           behind its mast or the ball and in front of it
-//   swell   dark windows flare one after another while a note is held, and the pattern pulses
+//   swell   how many dark windows glow with each note, and the pattern pulses while a note is held. The
+//           glow follows the track's amp envelope: up over its attack, down to its sustain over its decay,
+//           out over its release, through the greys between, each window a little after another
 //   bite    how high the flying car hovers over the helipad: at 0 it has landed
 //   sine    (the Shift row's) the two lines under the advert's pattern, short to long
 //   lowcut  (the Shift row's) the sun poster's reflection on the water clears, stripe by stripe from the
@@ -51,6 +53,7 @@ const i32 rise = 30;                    // how high the craft hovers at bite 100
 const i32 drift = 5;                    // how far each half of the hourglass moves at detune 100, px (SAND_DRIFT)
 const i32 course = city::train_end - city::train_start + gap;   // the train's loop, px
 const i32 road_gap = 30;                // px of its run a road car spends out of sight before it comes back
+const i32 glow_floor = 1024;            // released, the glow is out below this (1/64, Q16)
 const u32 fan_rate = 32768;             // the fans' turn while notes are held, Q16 turns a second: half a turn
 
 static inline u32 hash(i32 i, i32 j, u32 k) {
@@ -94,10 +97,9 @@ static inline Node pose(i32 x, i32 y, i32 scale, u32 shade, Paint paint) {
     return n;
 }
 static inline Node parked() { return pose(hidden_x * unit, hidden_y * unit, unit, 0, keep); }
-// A grey from low toward high (either way) by a Q16 amount.
-static inline u32 toward(u32 low, u32 high, u32 amount);
-static inline Node home(u32 k, u32 shade, Paint paint) {
-    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, shade, paint);
+// A node at home in a grey (0..15): the palette's nearest (city.h's slot).
+static inline Node home(u32 k, u32 grey, Paint paint) {
+    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::slot[grey > 15 ? 15 : grey], paint);
 }
 static inline bool same(const Node& a, const Node& b) {
     return a.x == b.x && a.y == b.y && a.scale == b.scale && a.cos == b.cos && a.sin == b.sin &&
@@ -109,12 +111,13 @@ static inline u32 between(u32 low, u32 high, u32 amount) {
     const u32 v = low + ((amount * (high - low + 1)) >> 16);
     return v > high ? high : v;
 }
-static inline u32 toward(u32 low, u32 high, u32 amount) {
-    return high >= low ? between(low, high, amount) : low - between(0, low - high, amount);
+// A fog layer's donor for bright: none at 0, then each of its donors in turn up to its densest (high), the
+// palette's white at rising opacity.
+static inline Node fog(u32 k, u32 densest, u32 bright) {
+    if (!bright) return parked();
+    return pose(city::home_x[k] * unit, city::home_y[k] * unit, unit, city::fog_donor + ((bright * (densest + 1)) >> 16),
+                fill_and_stroke);
 }
-// How dark bright makes the sky: its square, so it stays light at the lower settings and darkens most
-// toward 100, where the lit windows are most.
-static inline u32 night(u32 bright) { return (bright * bright) >> 16; }
 // The advert's pattern for a shape: 1 ramps (the saw, to 30), 2 a checker (saw and pulse into the square,
 // to 85), 3 bars (the narrowing pulse). Pattern 0, circles, is drawn but not shown: shape has no sine now.
 static inline u32 pattern_of(u32 shape) { return shape < 19661u ? 1 : shape < 55706u ? 2 : 3; }
@@ -138,7 +141,17 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
     switch (city::kind[k]) {
     case city::window: {
         if ((p << 8) < c.bright) return home(k, high, fill_and_stroke);
-        // swell: dark windows flare, each note its own few, one after another
+        if (s.envelope) {
+            // swell: dark windows glow with the envelope, each note its own few (glow_share of them at swell
+            // 100), each at its own point of the rise, from its dark grey through the greys to white
+            if (!s.glow || r16(static_cast<i32>(k), static_cast<i32>(s.glow_serial), 3) >= ((c.swell * city::glow_share) >> 16))
+                return home(k, low, fill_and_stroke);
+            i32 lit = 2 * s.glow - static_cast<i32>(r16(static_cast<i32>(k), 0, 40));
+            lit = lit < 0 ? 0 : lit > 65536 ? 65536 : lit;
+            return home(k, low + (((15u - low) * static_cast<u32>(lit) + r16(static_cast<i32>(k), 0, 41)) >> 16),
+                        fill_and_stroke);
+        }
+        // the envelope unknown: dark windows flare, each note its own few, one after another
         const i32 spread = 154 + static_cast<i32>((c.swell * 973u) >> 16);   // Q10 seconds
         if (held && c.swell && r16(static_cast<i32>(k), static_cast<i32>(s.serial), 3) < (c.swell >> 1) &&
             s.hold >= static_cast<i32>((r16(static_cast<i32>(k), 0, 40) * static_cast<u32>(spread)) >> 16))
@@ -158,15 +171,46 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
         return pose(city::home_x[k] * unit, city::home_y[k] * unit + (p ? d : -d), unit, 0, keep);
     }
     case city::ring: {
-        const u32 level = ring_level(c.ring, p);
-        return level ? home(k, low + (level - 1) * (high - low) / 2, stroke) : parked();
+        // param: its ring (bit 0), and whether it is an outline (bit 1, the dish's) or a filled ribbon
+        const u32 level = ring_level(c.ring, p & 1u);
+        return level ? home(k, low + (level - 1) * (high - low) / 2, (p & 2u) ? stroke : fill_and_stroke) : parked();
     }
-    case city::sky: return home(k, toward(low, high, night(c.bright)), fill_and_stroke);
+    case city::fog: return fog(k, high, c.bright);
     case city::stripe: {   // the sun's reflection, cleared from the bottom stripe up as lowcut's step rises
         const u32 step = (c.lowcut * 100u + 32768u) >> 16;
         return step * (city::sun_stripes + 1) <= (p + 1) * 100u ? home(k, 0, keep) : parked();
     }
     default: return home(k, 0, keep);
+    }
+}
+
+// The windows' glow, Q16, through the track's amp envelope: on a note's start up at attack's rate to full,
+// then down to sustain at decay's; released, out at release's, to nothing. Stock reads each word's top 7
+// bits; release's runs the other way. Unknown, the glow is off and the windows flare as they did before.
+static inline i32 fall(i32 level, i32 to, u32 index, i32 dt) {
+    i32 k = (city::fall_rate[index] >> 4) * dt >> 6;                      // Q16 of the way there this frame
+    k = k > 65536 ? 65536 : k;
+    const i32 step = ((level - to) >> 4) * (k >> 4) >> 8;
+    return level - (step ? step : level > to ? 1 : level < to ? -1 : 0);   // never stuck short of it
+}
+static inline void glow(DisplayState& s, const Input& in, bool held, i32 dt) {
+    s.envelope = envelope_known(in.amp) ? 1u : 0u;
+    if (!s.envelope) { s.glow = 0; s.stage = 0; return; }
+    const u32 attack = static_cast<u32>(in.amp.attack < 0 ? 0 : in.amp.attack) >> 24;
+    const u32 decay = static_cast<u32>(in.amp.decay < 0 ? 0 : in.amp.decay) >> 24;
+    const u32 release = static_cast<u32>(in.amp.release < 0 ? 0 : in.amp.release) >> 24;
+    const i32 sustain = (in.amp.sustain < 0 ? 0 : in.amp.sustain) >> 15;   // Q16
+    if (held) {
+        if (s.stage == 0 || s.stage == 3 || in.note_serial != s.glow_serial) { s.glow_serial = in.note_serial; s.stage = 1; }
+        if (s.stage == 1) {
+            s.glow += (city::attack_rate[attack] >> 6) * dt >> 4;
+            if (s.glow >= 65536) { s.glow = 65536; s.stage = 2; }
+        }
+        if (s.stage == 2) s.glow = fall(s.glow, sustain, decay ? decay : 1, dt);
+    } else if (s.stage) {
+        s.stage = 3;
+        s.glow = fall(s.glow, 0, 127 - release, dt);
+        if (s.glow < glow_floor) { s.glow = 0; s.stage = 0; }
     }
 }
 
@@ -191,7 +235,7 @@ static inline Node moved(u32 k, const DisplayState& s, const Controls& c, bool h
         const i32 bob = held && up ? (sway(clock * 41u) + 512) >> 10 : 0;          // -1, 0 or 1 px
         Node n = pose(city::home_x[k] * unit, (city::home_y[k] - up + bob) * unit, unit, 0, keep);
         if (p) {   // its beacon
-            n.shade = ((clock + 300u) & 1023u) < 120u ? city::high[k] : city::low[k];
+            n.shade = city::slot[((clock + 300u) & 1023u) < 120u ? city::high[k] : city::low[k]];
             n.paint = fill_and_stroke;
         }
         return n;
@@ -418,6 +462,10 @@ inline void display_reset(DisplayState& state) {
     state.clock = 0;
     state.hold = 0;
     state.serial = 0;
+    state.glow = 0;
+    state.stage = 0;
+    state.glow_serial = 0;
+    state.envelope = 0;
     state.frames = state.acc = state.worst = state.fps = state.worst_shown = 0;
     state.pace = 0;
     state.spin = 0;
@@ -442,6 +490,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     if (!held) state.hold = 0;
     else if (input.note_serial != state.serial) { state.serial = input.note_serial; state.hold = 0; }
     else state.hold = clamp(state.hold + dt, 0, 8 * unit);
+    glow(state, input, held, dt);
 
     // The train: eases up to chorus's speed while notes are held, and down to a stop.
     const i32 target = held ? (slow + static_cast<i32>((c.chorus * static_cast<u32>(fast - slow)) >> 16)) * unit : 0;
