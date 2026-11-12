@@ -233,5 +233,5 @@ int main() {
         expect(moved, "a control changes nothing");
     }
     if (!failures) std::puts("ok");
-    return failures ? 1 : 0;
+    return 1;   // diagnostic: fail on purpose, so CI prints the measurements
 }
