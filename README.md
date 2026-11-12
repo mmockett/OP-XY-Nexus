@@ -7,8 +7,8 @@ of resonant filters. Swell makes a held note bloom like brass, bite gives it
 the CS-80's bright blip, ring modulation turns it to bells, and the CS-80's
 own chorus moves it across the stereo field.
 
-**Status: experimental.** Nexus has not yet been played on an OP-XY, and its
-CPU figures are estimates.
+**Status: experimental.** Nexus plays on the OP-XY; its CPU figures below are
+estimates.
 
 ## The sound
 
