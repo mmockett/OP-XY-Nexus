@@ -582,8 +582,8 @@ class City:
     def fan(self, owner, bx, cu, cv, r):
         """An extractor fan on a roof: its rim and dark well, three blades as one reshaping outline that
         display.cpp turns in the roof's plane, and a hub."""
-        owner.roof_disc(bx.T, cu, cv, r + 1.4, 12, 9)
-        owner.roof_disc(bx.T, cu, cv, r + 0.4, 12, 1)
+        owner.roof_disc(bx.T, cu, cv, r + 1.4, 20, 9)
+        owner.roof_disc(bx.T, cu, cv, r + 0.4, 20, 1)
         k = len(self.fans)
         cx, cy = bx.T(cu, cv)
         origin = (math.floor(cx), math.floor(cy))
@@ -741,7 +741,7 @@ def city():
     s.faces((9, 7, 4))
     s.fill([hp.T(4, 4), hp.T(43, 4), hp.T(43, 42), hp.T(4, 42)], 6)
     s.line([hp.T(7, 7), hp.T(40, 7), hp.T(40, 39), hp.T(7, 39)], 11, 0.5)
-    s.roof_disc(hp.T, 23.5, 23, 10, 18, 11, 0.6)
+    s.roof_disc(hp.T, 23.5, 23, 10, 32, 11, 0.6)
     H = [(-3.6, -3), (-2.4, -3), (-2.4, -0.6), (2.4, -0.6), (2.4, -3), (3.6, -3), (3.6, 3), (2.4, 3), (2.4, 0.6),
          (-2.4, 0.6), (-2.4, 3), (-3.6, 3)]
     s.fill([hp.T(23.5 + du, 23 + dv) for du, dv in H], 11)
