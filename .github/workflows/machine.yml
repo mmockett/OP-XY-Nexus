@@ -38,6 +38,14 @@ jobs:
           python nexus/nexus/tools/make_tables.py
           python nexus/nexus/tools/make_presets.py
           git -C nexus diff --exit-code
+      - name: Debug dump (temporary)
+        if: always()
+        run: python nexus/.debug/dump.py nexus/nexus/tools dump-linux.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dump
+          path: dump-linux.json
       - name: Machine source, preview and sound checks
         run: python open-xy/sdk.py test --machine nexus/nexus --cxx clang++ --host-cxx g++
       # sdk.py test keeps the host tests' output to itself: run them again to print the levels and the
