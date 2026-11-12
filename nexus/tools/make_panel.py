@@ -9,10 +9,12 @@ checks), from one description, so they always agree. With --preview <dir> it
 also draws a few states as SVG, through a mirror of display.cpp's frame logic,
 for looking at the picture without building anything.
 
-    python3 tools/make_panel.py [--preview <dir>] [--compact nospace,implicit,relative]
+    python3 tools/make_panel.py [--preview <dir>] [--compact nospace,implicit,relative] [--round ellipse]
 
---compact writes shorter path syntax the OP-XY hasn't been seen to load yet (path_d() says which), for a
-build meant to test it; the artwork kept in the repository is written without it.
+--compact writes shorter path syntax the OP-XY hasn't been seen to load yet (path_d() says which), and
+--round ellipse the roof's circles (the helipad's ring, the fans' rims, wells and hubs) as SVG ellipse
+elements, also not yet seen on it, each for a build meant to test it; the artwork kept in the repository
+is written without them.
 
 Pure Python with shapely 2.2.0 (a prebuilt wheel); nothing is compiled.
 
@@ -29,6 +31,7 @@ advert's two lines are reshaping outlines (nodes 0..3) that display.cpp redraws.
 The train and the cars are drawn after what is behind them and before what is in
 front, so they pass behind the nearer towers.
 """
+import collections
 import json
 import math
 import pathlib
@@ -102,6 +105,13 @@ assert FOG_DONOR + len(FOG_ALPHA) == 16
 # pales as the fog thickens and the near city stays crisp. Bright sets its opacity; at 0 it is hidden, a
 # black sky over darker towers. Only what is seen of it is drawn (compose() cuts it), as one outline.
 FOG_POINTS = 40                   # the sheet's outline, at most
+# Round things drawn as SVG circles: the OP-XY's SVG loader knows circle and ellipse (with cx, cy, r, rx
+# and ry), and still circles with a plain fill or stroke have drawn on it (Orbit's dots, Bend's and Recur's
+# rings). An ellipse element hasn't been seen on it yet, so the roof's circles, which are level ellipses
+# twice as wide as tall, stay outlines of points unless asked for (--round ellipse), for a build meant to
+# test it.
+ROUND = set()
+ROUND_TRACE = 48                  # points tracing a round element, for the depth order and what it hides
 
 
 def snap(t):
@@ -249,11 +259,12 @@ JITTER = 0.0                      # a test of the output's steadiness: nudge eve
 
 
 class Item:
-    def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None):
+    def __init__(self, kind, pts, tone=None, occ=False, width=0.0, node=None, shape=None):
         # Points to 1/10000 px: the platforms' sines and cosines differ in their last bits, and an
         # outline that just touches another must touch, or not, the same way on every machine.
         pts = [(round(x + JITTER, 4), round(y - JITTER, 4)) for x, y in pts]
         self.kind, self.pts, self.tone, self.occ, self.width, self.node = kind, pts, tone, occ, width, node
+        self.shape = shape                # a round element's (tag, cx, cy, rx, ry); pts then trace it
 
 
 class Solid:
@@ -273,6 +284,28 @@ class Solid:
 
     def line(self, pts, tone, width):
         self.items.append(Item("line", list(pts), tone, width=width))
+
+    def round(self, cx, cy, rx, ry, tone, width=0.0, occ=None):
+        """A still circle (rx == ry) or level ellipse, written as an SVG circle or ellipse element: drawn
+        whole, not clipped, and traced (ROUND_TRACE points) for the depth order and what it hides. Filled,
+        or stroked when it has a width."""
+        cx, cy, rx, ry = (round(v, 2) for v in (cx, cy, rx, ry))
+        pts = ellipse(cx, cy, rx, ry, ROUND_TRACE)
+        if occ is None:
+            occ = not width and math.pi * rx * ry >= OCCLUDE
+        self.items.append(Item("round", pts, tone, occ, width,
+                               shape=("circle" if rx == ry else "ellipse", cx, cy, rx, ry)))
+
+    def roof_disc(self, f, cu, cv, r, n, tone, width=0.0):
+        """A circle of radius r lying on a roof (f is its box's T): a level ellipse twice as wide as it is
+        tall on screen. An SVG ellipse with --round ellipse (not yet seen on the device), else n points."""
+        if "ellipse" in ROUND:
+            cx, cy = f(cu, cv)
+            self.round(cx, cy, r * math.sqrt(2), r / math.sqrt(2), tone, width)
+        elif width:
+            self.line(disc(f, cu, cv, r, n), tone, width)
+        else:
+            self.fill(disc(f, cu, cv, r, n), tone)
 
     def node(self, pts, **spec):
         self.items.append(Item("node", list(pts), node=spec))
@@ -549,8 +582,8 @@ class City:
     def fan(self, owner, bx, cu, cv, r):
         """An extractor fan on a roof: its rim and dark well, three blades as one reshaping outline that
         display.cpp turns in the roof's plane, and a hub."""
-        owner.fill(disc(bx.T, cu, cv, r + 1.4, 12), 9)
-        owner.fill(disc(bx.T, cu, cv, r + 0.4, 12), 1)
+        owner.roof_disc(bx.T, cu, cv, r + 1.4, 12, 9)
+        owner.roof_disc(bx.T, cu, cv, r + 0.4, 12, 1)
         k = len(self.fans)
         cx, cy = bx.T(cu, cv)
         origin = (math.floor(cx), math.floor(cy))
@@ -558,7 +591,7 @@ class City:
         pts = [(x + cx, y + cy) for x, y in blades(r - 0.6, 0.0)]
         owner.node(pts, kind="path", path=FAN_PATHS[k], tone=9, outline=True, pivot=origin, exact=True,
                    fan=(centre, r - 0.6), reach=disc(bx.T, cu, cv, r, 16))
-        owner.fill(disc(bx.T, cu, cv, 1.3, 8), 10)
+        owner.roof_disc(bx.T, cu, cv, 1.3, 8, 10)
         self.fans.append(k)
 
 
@@ -680,9 +713,9 @@ def city():
     for k in range(4):
         ball.fill([(sx_ - 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 6 - 7 * k), (sx_ + 2.6, sy_ - 5 - 7 * k),
                    (sx_ - 2.6, sy_ - 5 - 7 * k)], 6)
-    ball.fill(ellipse(bcx, bcy, 8, 8, 16), 4)
-    ball.fill(ellipse(bcx - 2, bcy - 2.2, 4.6, 4.6, 12), 7)
-    ball.fill(ellipse(bcx - 3, bcy - 3.4, 1.6, 1.6, 8), 10)
+    ball.round(bcx, bcy, 8, 8, 4)                    # the ball, its sheen and its glint: SVG circles
+    ball.round(bcx - 2, bcy - 2.2, 4.6, 4.6, 7)
+    ball.round(bcx - 3, bcy - 3.4, 1.6, 1.6, 10)
     ball.fill([(bcx - 8, bcy - 0.5), (bcx + 8, bcy - 0.5), (bcx + 8, bcy + 0.7), (bcx - 8, bcy + 0.7)], 2)
     C.mast(ball, bcx, bcy - 7.6, 20, rings=False, width=1.0, tone=3, phase=150)
     for rx, ry, slot in hoops:                      # and their front halves over the ball
@@ -694,7 +727,7 @@ def city():
     s.faces((9, 7, 4))
     s.fill([hp.T(4, 4), hp.T(43, 4), hp.T(43, 42), hp.T(4, 42)], 6)
     s.line([hp.T(7, 7), hp.T(40, 7), hp.T(40, 39), hp.T(7, 39)], 11, 0.5)
-    s.line(disc(hp.T, 23.5, 23, 10, 18), 11, 0.6)
+    s.roof_disc(hp.T, 23.5, 23, 10, 18, 11, 0.6)
     H = [(-3.6, -3), (-2.4, -3), (-2.4, -0.6), (2.4, -0.6), (2.4, -3), (3.6, -3), (3.6, 3), (2.4, 3), (2.4, 0.6),
          (-2.4, 0.6), (-2.4, 3), (-3.6, 3)]
     s.fill([hp.T(23.5 + du, 23 + dv) for du, dv in H], 11)
@@ -1205,6 +1238,12 @@ def compose():
         vis = surface(g.intersection(STAGE, grid_size=GRID))
         if not cover.is_empty:
             vis = vis.difference(cover, grid_size=GRID)
+        if it.kind == "round":            # drawn whole, or not at all when none of it is seen
+            if vis.area >= 0.6:
+                out.append(dict(kind="round", pts=it.pts, shape=it.shape, tone=it.tone, width=it.width, name=s.name))
+            if it.occ:
+                cover = shapely.union_all([cover, g.intersection(STAGE, grid_size=GRID)], grid_size=GRID)
+            continue
         ps = pieces(vis)
         dropped += max(0.0, vis.area - sum(abs(area(p)) for p in ps))
         for p in reversed(ps):
@@ -1225,7 +1264,7 @@ def reach(e):
         moves = it.node.get("sweep", [(0, 0)])
         g = shapely.union_all([shapely.affinity.translate(base, dx, dy) for dx, dy in moves]).convex_hull
         return g.buffer(it.node.get("spread", 0.6))
-    if e["kind"] == "line":
+    if e["kind"] == "line" or (e["kind"] == "round" and e["width"]):
         return Polygon(e["pts"]).exterior.buffer(e["width"] / 2 + 0.1)
     return Polygon(e["pts"])
 
@@ -1424,11 +1463,28 @@ def path_d(pts, still=False):
     return "M" + (gap + lineto).join(f"{num(x)},{num(y)}" for x, y in pts) + "Z"
 
 
+def round_svg(e):
+    """A round element's SVG: a circle or an ellipse, filled or stroked."""
+    tag, cx, cy, rx, ry = e["shape"]
+    size = f'r="{num(rx)}"' if tag == "circle" else f'rx="{num(rx)}" ry="{num(ry)}"'
+    paint = (f'fill="none" stroke="{grey(e["tone"])}" stroke-width="{num(e["width"])}"' if e["width"]
+             else f'fill="{grey(e["tone"])}"')
+    return f'<{tag} cx="{num(cx)}" cy="{num(cy)}" {size} {paint}/>'
+
+
+def round_area(e):
+    _, _, _, rx, ry = e["shape"]
+    return 0.0 if e["width"] else math.pi * rx * ry
+
+
 def write_panel(sc):
     out = [f'<g id="{ID}_panel">']
     fill_static = 0.0
     for e in sc["out"]:
-        if e["kind"] == "fill":
+        if e["kind"] == "round":
+            out.append(round_svg(e))
+            fill_static += round_area(e)       # drawn whole: the device fills all of it
+        elif e["kind"] == "fill":
             check(e["pts"], "a static outline")
             out.append(f'<path d="{path_d(e["pts"], still=True)}" fill="{grey(e["tone"])}"/>')
             fill_static += abs(area(e["pts"]))
@@ -1480,7 +1536,7 @@ def train_course(sc):
     wholly hidden, behind what is drawn after it, under the header or off the screen."""
     out = sc["out"]
     first = min(k for k, e in enumerate(out) if e["kind"] == "node" and e["node"].kind == "train")
-    front = shapely.union_all([Polygon(e["pts"]) for e in out[first:] if e["kind"] == "fill"] +
+    front = shapely.union_all([Polygon(e["pts"]) for e in out[first:] if e["kind"] == "fill" or (e["kind"] == "round" and not e["width"])] +
                               [rect(-10, -10, 490, TOP)], grid_size=GRID)
     train = shapely.union_all([Polygon(n.abs) for n in sc["nodes"] if n.kind == "train"]).buffer(0.3)
 
@@ -1525,7 +1581,7 @@ def road_course(sc):
         if n.kind != "car":
             continue
         at = next(k for k, e in enumerate(out) if e["kind"] == "node" and e["node"] is n)
-        front = shapely.union_all([Polygon(e["pts"]) for e in out[at:] if e["kind"] == "fill"] +
+        front = shapely.union_all([Polygon(e["pts"]) for e in out[at:] if e["kind"] == "fill" or (e["kind"] == "round" and not e["width"])] +
                                   [rect(-10, -10, 490, TOP)], grid_size=GRID)
         car = Polygon(n.abs).buffer(0.3)
         home = n.spec["home"]
@@ -1882,7 +1938,9 @@ def preview(out_dir, name, sc, c, **kw):
            '<rect width="480" height="220" fill="#000"/>']
     fill = fog = 0.0
     for e in sc["out"]:
-        if e["kind"] == "fill":
+        if e["kind"] == "round":
+            svg.append(round_svg(e))
+        elif e["kind"] == "fill":
             svg.append(f'<path d="{path_d(e["pts"])}" fill="{grey(e["tone"])}"/>')
         elif e["kind"] == "line":
             svg.append(f'<path d="{path_d(e["pts"])}" fill="none" stroke="{grey(e["tone"])}" stroke-width="{num(e["width"])}"/>')
@@ -2027,6 +2085,10 @@ def previews(out, sc):
 
 
 def main():
+    if "--round" in sys.argv:
+        ROUND.update(sys.argv[sys.argv.index("--round") + 1].split(","))
+        assert ROUND <= {"ellipse"}, f"unknown forms: {ROUND}"
+        print("the roof's circles as SVG ellipses, for a test build only (not yet seen on the device)")
     if "--compact" in sys.argv:
         COMPACT.update(sys.argv[sys.argv.index("--compact") + 1].split(","))
         assert COMPACT <= {"nospace", "implicit", "relative"}, f"unknown forms: {COMPACT}"
@@ -2050,10 +2112,11 @@ def main():
     d.write_text(re.sub(r'"points": \d+', f'"points": {PATH_POINTS}', text, count=1))
     nodes = sc["nodes"]
     statics = sum(1 for e in sc["out"] if e["kind"] != "node")
+    rounds = collections.Counter(e["shape"][0] for e in sc["out"] if e["kind"] == "round")
     moving = sum(len(k.rel) for k in nodes if k.kind in MOVING)
     largest = max(len(k.rel) for k in nodes if k.kind not in MOVING)
     assert moving + largest <= BUDGET + 60, f"{moving} moving points and a node of {largest}"
-    print(f"{len(nodes) + 8} nodes, {statics} static outlines, artwork {size} bytes of {ARTWORK_LIMIT}, "
+    print(f"{len(nodes) + 8} nodes, {statics} static outlines ({', '.join(f'{v} {k}s' for k, v in sorted(rounds.items())) or 'no round elements'}), artwork {size} bytes of {ARTWORK_LIMIT}, "
           f"still fill {fill_static:.0f} px^2 ({fill_static / (480 * 182):.2f} of the stage, "
           f"{(fill_static + HEADER_FILL) / (480 * 182):.2f} with the header), train {sc['course']}")
     by = {}
