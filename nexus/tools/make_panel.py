@@ -50,6 +50,8 @@ CRAFT_RISE = 30                   # px the craft rises at bite 100 (display.cpp'
 # The road's cars: lane (world x), way (1 up the road to the right, -1 down it toward the viewer), speed
 # px a second along screen x, where it is drawn (world y), and where it is on its run at rest (px).
 ROAD_CARS = [(218.9, 1, 14, -150, 40), (223.15, 1, 11, -150, 170), (227.4, -1, 12, -150, 90), (230.9, -1, 16, -150, 220)]
+SAND = 2                          # the hourglass's dots: dark against its panel (12..15) at every reso
+SUN_STRIPES = 4                   # the sun poster's reflection, in stripes that lowcut clears from the bottom up
 SAND_DRIFT = 5                    # px each half of the hourglass moves at detune 100 (display.cpp's drift)
 OCCLUDE = 100                     # px^2: a static outline this big hides what is behind it
 HEADER_FILL = 480 * 38 + 8 * 60 * 20   # the header's black and its bars, px^2
@@ -621,9 +623,9 @@ def city():
     C.box_on("hg1", hg, 22, 6, 8, 7, 4)
     s.fill(quad(hg.L, 3, 7, 34, 78), 4, occ=True)                       # the billboard's frame
     s.node(quad(hg.L, 4.25, 8.25, 31.5, 75.5), kind="panel", low=12, high=15, tone=14, occ=True)
-    s.node([hg.L(9, 17), hg.L(32, 17), hg.L(20.5, 45)], kind="sand", param=0, tone=6, keep=True,
+    s.node([hg.L(9, 17), hg.L(32, 17), hg.L(20.5, 45)], kind="sand", param=0, tone=SAND, keep=True,
            sweep=[(0, 0), (0, -SAND_DRIFT)])
-    s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=6, keep=True,
+    s.node([hg.L(20.5, 47), hg.L(32, 75), hg.L(9, 75)], kind="sand", param=1, tone=SAND, keep=True,
            sweep=[(0, 0), (0, SAND_DRIFT)])
     # the dot matrix: the panel's grey laid over the gaps between dots, rows and columns
     s.node(column(hg.L, 5.5, 10.75, 28, 1.25, 12, 3, spine=0.6), kind="panel", low=12, high=15, tone=14)
@@ -715,10 +717,18 @@ def city():
     s.fill([sb.T(2, 2), sb.T(36, 2), sb.T(36, 10), sb.T(2, 10)], 6)
     s.fill(quad(sb.L, 2.5, 4, 33, 72), 4, occ=True)
     s.node(quad(sb.L, 3.75, 5.25, 30.5, 69.5), kind="panel", low=12, high=15, tone=14, occ=True)
-    sun = [sb.L(19 + 9.5 * math.cos(math.pi * k / 10), 32 - 9.5 * math.sin(math.pi * k / 10)) for k in range(11)]
+    # a sunrise over water: the sun's half disc on the horizon, and its reflection below in stripes
+    # cut to the mirrored half disc, narrowing as they go down; lowcut clears them from the bottom up
+    r, hz = 12, 34
+    sun = [sb.L(19 + r * math.cos(math.pi * k / 10), hz - r * math.sin(math.pi * k / 10)) for k in range(11)]
     s.fill(sun, 8)
-    for k in range(4):
-        s.fill(quad(sb.L, 9.5 - k * 0.6, 34.5 + k * 4.2, 19 + k * 1.2, 2.6 - k * 0.3), 8)
+    s.fill(quad(sb.L, 4.5, hz + 0.5, 29, 0.7), 8)                                 # the horizon
+    for k in range(SUN_STRIPES):
+        top = hz + 2.2 + k * 2.7                                                  # the k-th from the horizon
+        bottom = top + 1.4 - k * 0.15
+        half = math.sqrt(r * r - ((top + bottom) / 2 - hz) ** 2)                  # the mirrored disc's width there
+        s.node(quad(sb.L, 19 - half, top, 2 * half, bottom - top), kind="stripe", param=SUN_STRIPES - 1 - k,
+               tone=8, keep=True)
     s.node([sb.L(37.3, 3), sb.L(38, 3), sb.L(38, 76), sb.L(37.3, 76)], kind="neon", low=4, high=15, tone=12)
     C.lights.append((s, *sb.T(1, 11), 1.0, 90))
     # L: the low block at the bottom left: fans on its roof, a lit band on its face
@@ -1064,8 +1074,8 @@ def merge(out):
 
 # ------------------------------------------------------------------ nodes
 MOVING = ("light", "dish", "craft", "shadow", "train", "car")
-KINDS = ["fixed", "window", "glow", "glyph", "pattern", "panel", "sand", "neon", "ring", "sky", "light", "dish",
-         "craft", "shadow", "train", "car"]
+KINDS = ["fixed", "window", "glow", "glyph", "pattern", "panel", "sand", "neon", "ring", "sky", "stripe", "light",
+         "dish", "craft", "shadow", "train", "car"]
 
 
 class Node:
@@ -1139,8 +1149,8 @@ def write_panel(sc):
             t = grey(n.tone)
             if n.path is not None:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
-            elif n.keep:
-                paint = f'fill="{t}" stroke="{t}" stroke-width="0.3"'
+            elif n.keep:              # its own paint, kept: a fill alone, as the still artwork's
+                paint = f'fill="{t}"'
             elif n.outline:
                 paint = f'fill="none" stroke="{t}" stroke-width="{num(PAL_WIDTH)}"'
             else:
@@ -1281,6 +1291,8 @@ def write_tables(sc):
          "// The train's run, px along screen x from home (it moves half that down): wholly hidden at",
          "// both ends, behind the nearer towers or off the screen.",
          f"const opxy::i32 train_start = {start}, train_end = {end};",
+         f"// The sun poster's reflection: {SUN_STRIPES} stripes, numbered from the bottom (param).",
+         f"const opxy::u32 sun_stripes = {SUN_STRIPES};",
          "// The road cars, in node order from the first: each one's run, px along screen x from home (it",
          "// moves half that up), wholly hidden at both ends; its way (1 up the road to the right, -1 down",
          "// it), its speed in px a second, and where it is on its run at rest.",
@@ -1406,6 +1418,10 @@ def mirror(sc, c, held=False, hold=0, serial=1, clock=0, d=0, spin=0, road=None)
             shade = hi if ((clock + p * 4) & 1023) < 230 else lo
         elif kind == "sky":
             shade = toward(lo, hi, (c["bright"] * c["bright"]) >> 16)
+        elif kind == "stripe":
+            step = (c.get("lowcut", 0) * 100 + 32768) >> 16
+            if step * (SUN_STRIPES + 1) > (p + 1) * 100:
+                continue
         elif kind == "dish":
             turn = ((sway(clock * 5) * 8) >> 10)
         elif kind in ("craft", "shadow"):
@@ -1468,7 +1484,7 @@ def preview(out_dir, name, sc, c, **kw):
                 continue
             x, y, s, turn, shade = place[k.index]
             t = grey(k.tone if shade is None else shade)
-            width = 0.3 if k.keep else PAL_WIDTH
+            width = 0 if k.keep and shade is None else PAL_WIDTH
             f = "none" if k.outline else t
             if not k.outline:
                 fill += measures(k.rel)["area"] * s * s
@@ -1540,13 +1556,15 @@ def previews(out, sc):
     tyrell_shift = [q(v) for v in (0, .375, 0, .06, .5, .3125, .4, .25)]
 
     def setting(page, row, **kw):
-        return dict(zip(names, page), sine=row[0], values=captions(page, row), **kw)
+        return dict(zip(names, page), sine=row[0], lowcut=row[2], values=captions(page, row), **kw)
 
     def changed(page=None, row=None, **controls):
         page, row = list(page or tyrell_page), list(row or tyrell_shift)
         for name, v in controls.items():
             if name == "sine":
                 row[0] = q(v)
+            elif name == "lowcut":
+                row[2] = q(v)
             else:
                 page[names.index(name)] = q(v)
         return setting(page, row)
@@ -1569,6 +1587,8 @@ def previews(out, sc):
               ("craft", changed(bite=.6, ring=1), dict(held=True, clock=400, spin=9000, road=road)),
               ("sine100", changed(sine=1), {})]
     states += [(f"bright{v:03d}", changed(bright=v / 100), {}) for v in (0, 25, 50, 75, 100)]
+    states += [(f"lowcut{v:03d}", changed(lowcut=v / 100), {}) for v in (0, 25, 50, 75, 100)]
+    states += [(f"reso{v:03d}", changed(reso=v / 100), {}) for v in (0, 100)]
     for name, c, kw in states:
         f = preview(out, name, sc, c, **kw)
         print(f"{name}: node fill {f:.0f} px^2")

@@ -120,10 +120,10 @@ ring (Glass Choir).
 
 A dense isometric city in greys, drawn like pixel art: an elevated monorail
 crossing it on a long diagonal, a road on a viaduct below, the OP-XY advert
-tower, a sun billboard and a dot-matrix hourglass, a helipad with a flying car,
-masts with lights, a dish, a ball tower, rooftop extractor fans, plant rooms and
-rows of windows, with pale towers in the haze behind. Tops are light, sides mid
-and dark.
+tower, a poster of the sun rising over water, a dot-matrix hourglass, a helipad
+with a flying car, masts with lights, a dish, a ball tower, rooftop extractor
+fans, plant rooms and rows of windows, with pale towers in the haze behind.
+Tops are light, sides mid and dark.
 
 At rest the city is still. While a note is held, a two-car train runs along
 the monorail, passing behind the nearer towers and coming round again; tiny
@@ -134,7 +134,7 @@ everything eases to a stop where it is.
 | Control | What it changes |
 | --- | --- |
 | shape | The advert's pattern: ramps for the saw, a checker for the pulse and square, thin bars for the narrow pulse |
-| detune | The hourglass's two halves drift apart |
+| detune | The hourglass's two halves of dark dots drift apart |
 | bright | The sky darkens from a light grey to near black, and more windows and background lights are lit |
 | reso | The advert, the billboards and the neon edges brighten |
 | chorus | The train's speed |
@@ -142,9 +142,10 @@ everything eases to a stop where it is.
 | swell | Dark windows flare one by one while a note is held, and the advert's pattern pulses |
 | bite | How high the flying car hovers over the helipad: at 0 it has landed |
 | sine (Shift) | The two lines under the advert's pattern, short to long |
+| lowcut (Shift) | The sun poster's reflection on the water clears stripe by stripe from the bottom up |
 
 While Shift is held, the header's bright row shows the Shift controls. Sine's
-lines follow it whether or not Shift is held.
+lines and lowcut's reflection follow them whether or not Shift is held.
 
 ## CPU
 

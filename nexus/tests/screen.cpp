@@ -211,6 +211,7 @@ bool settled(const i32 (&slots)[8]) {
     c.chorus = nexus::screen::q16(slots[4]); c.ring = nexus::screen::q16(slots[5]);
     c.swell = nexus::screen::q16(slots[6]); c.bite = nexus::screen::q16(slots[7]);
     c.sine = nexus::screen::q16(row.values[0]);
+    c.lowcut = nexus::screen::q16(row.values[2]);
     for (u32 k = city::first; k < nexus::city::restyle_end; ++k)
         if (!nexus::screen::same(frame.nodes[k], nexus::screen::restyled(k, state, c, false))) return false;
     return true;
@@ -512,6 +513,31 @@ int main() {
     }
     row.held = 0;
     row.values[0] = defaults[0];
+
+    // Lowcut clears the sun poster's reflection from the bottom stripe up, Shift held or not: all of it at
+    // lowcut 0, none at 100, never one more as it rises, and still at rest.
+    for (int held = 0; held < 2; ++held) {
+        row.held = static_cast<u32>(held);
+        u32 last = 99;
+        for (int v = 0; v <= 100; ++v) {
+            row.values[2] = v == 100 ? 0x7fffffff : v * 21474836 + (v * 47 + 50) / 100;
+            expect(still(slots, 1150), "the screen changes at rest while lowcut is set");
+            expect(settled(slots), "the poster hasn't settled");
+            u32 shown = 0, lowest = 99;
+            for (u32 k = city::first; k < city::restyle_end; ++k)
+                if (city::kind[k] == city::stripe && !hidden(frame.nodes[k])) {
+                    ++shown;
+                    if (city::param[k] < lowest) lowest = city::param[k];
+                }
+            expect(shown <= last, "a reflection stripe comes back as lowcut rises");
+            expect(!shown || lowest == city::sun_stripes - shown, "the reflection doesn't clear from the bottom up");
+            if (v == 0) expect(shown == city::sun_stripes, "the reflection isn't whole at lowcut 0");
+            if (v == 100) expect(shown == 0, "the reflection isn't gone at lowcut 100");
+            last = shown;
+        }
+    }
+    row.held = 0;
+    row.values[2] = defaults[2];
 
     // The fans: held, they ease up and then turn every frame; released, they ease to a stop.
     {

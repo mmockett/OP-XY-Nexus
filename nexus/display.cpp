@@ -10,7 +10,7 @@
 //
 // What the controls do to it:
 //   shape   the advert's pattern: ramps for the saw, a checker for the pulse and square, bars for the narrow pulse
-//   detune  the hourglass's two halves drift apart
+//   detune  the hourglass's two halves of dark dots drift apart
 //   bright  the sky darkens from a light grey to near black, and more windows and background lights are lit
 //   reso    the advert, the billboards and the neon edges brighten
 //   chorus  the train's speed
@@ -18,8 +18,10 @@
 //           behind its mast or the ball and in front of it
 //   swell   dark windows flare one after another while a note is held, and the pattern pulses
 //   bite    how high the flying car hovers over the helipad: at 0 it has landed
-//   sine    (the Shift row's) the two lines under the advert's pattern, short to long; the row's values
-//           reach the display whether or not Shift is held
+//   sine    (the Shift row's) the two lines under the advert's pattern, short to long
+//   lowcut  (the Shift row's) the sun poster's reflection on the water clears, stripe by stripe from the
+//           bottom up; all of it shows at 0, none at 100
+// The Shift row's values reach the display whether or not Shift is held.
 //
 // The Shift row shows in the header while Shift is held.
 //
@@ -65,7 +67,7 @@ static inline i32 sway(u32 turn) {
     return (x * (32768 - a)) >> 18;                                         // 4 x (1 - |x|), Q10
 }
 
-struct Controls { u32 shape, detune, bright, reso, chorus, ring, swell, bite, sine; };
+struct Controls { u32 shape, detune, bright, reso, chorus, ring, swell, bite, sine, lowcut; };
 
 // sin(2 pi x) for a Q16 turn, Q14, from city.h's quarter wave.
 static inline i32 sine_of(u32 turn) {
@@ -158,6 +160,10 @@ static inline Node restyled(u32 k, const DisplayState& s, const Controls& c, boo
         return level ? home(k, low + (level - 1) * (high - low) / 2, stroke) : parked();
     }
     case city::sky: return home(k, toward(low, high, night(c.bright)), fill_and_stroke);
+    case city::stripe: {   // the sun's reflection, cleared from the bottom stripe up as lowcut's step rises
+        const u32 step = (c.lowcut * 100u + 32768u) >> 16;
+        return step * (city::sun_stripes + 1) <= (p + 1) * 100u ? home(k, 0, keep) : parked();
+    }
     default: return home(k, 0, keep);
     }
 }
@@ -428,6 +434,7 @@ inline void display(DisplayState& state, const opxy::draw::Input& input, Frame& 
     // The Shift row's values reach the display whether or not Shift is held (opxy/synth_shift.hpp).
     const ShiftRow& row = shift_row(input);
     c.sine = q16(row.values[0]);
+    c.lowcut = q16(row.values[2]);
 
     // Swell: each note re-chooses the windows that flare, and they light one by one.
     if (!held) state.hold = 0;
